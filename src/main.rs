@@ -56,27 +56,50 @@ fn send_char(scan_code: u16, up: bool, c: u16) {
 }
 
 fn main() {
-    let rows = [
+    let mut l1 = HashMap::new();
+    for (scan_code, row_map) in &[
         (0x10, OsStr::new("bu.,üpclmfx´")),
         (0x1E, OsStr::new("hieaodtrnsß")),
         (0x2C, OsStr::new("kyöäqjgwvz")),
-    ];
-
-    let mut key_map = HashMap::new();
-    for (scan_code, row_map) in &rows {
+    ] {
         for (i, key) in row_map.encode_wide().enumerate() {
-            key_map.insert(scan_code + i as u16, key);
+            l1.insert(scan_code + i as u16, key);
         }
     }
 
-    KeyboardHook::set(move |scan_code, up| {
-        if let Some(&c) = key_map.get(&scan_code) {
-            println!("{}", c);
-            send_char(scan_code, up, c);
-            false
-        } else {
-            true
+    let mut l3 = HashMap::new();
+    for (scan_code, row_map) in &[
+        (0x10, OsStr::new("…_[]^!<>=&")),
+        (0x1E, OsStr::new("\\/{}*?()-:@")),
+        (0x2C, OsStr::new("#$|~`+%\"';")),
+    ] {
+        for (i, key) in row_map.encode_wide().enumerate() {
+            l3.insert(scan_code + i as u16, key);
         }
+    }
+
+    let mut l3_active = false;
+
+    KeyboardHook::set(move |scan_code, up| {
+        // Layer3 is activated by the `caps lock` or `#` key.
+        if scan_code == 0x3A || scan_code == 0x2B {
+            l3_active = !up;
+            return false;
+        }
+
+        if l3_active {
+            if let Some(&c) = l3.get(&scan_code) {
+                send_char(scan_code, up, c);
+                return false;
+            }
+        } else {
+            if let Some(&c) = l1.get(&scan_code) {
+                send_char(scan_code, up, c);
+                return false;
+            }
+        }
+
+        true
     });
 
     unsafe {
