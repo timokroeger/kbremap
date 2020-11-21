@@ -6,33 +6,32 @@ use winapi::{
     um::winuser::*,
 };
 
-/// Receives the scan codes of a keyboard event from the low level keyboard hook.
-///
-/// If the callback returns `false`, the key event will not be forwarded to other appliations.
-pub type Callback = fn(scan_code: u32, up: bool) -> bool;
-
 thread_local! {
     static KEYBOARD_HOOK: UnsafeCell<KeyboardHook> = UnsafeCell::new(KeyboardHook {
         handle: ptr::null_mut(),
-        callback: |_, _| true,
+        callback: Box::new(|_, _| true),
     })
 }
 
 pub struct KeyboardHook {
     handle: HHOOK,
-    callback: Callback,
+    callback: Box<dyn FnMut(u16, bool) -> bool>,
 }
 
 impl KeyboardHook {
     /// Sets the low-level keyboard hook for this thread.
     ///
-    /// Calls `callback` when receiving keyboard input events.
-    /// Filters out injected and extended scan codes.
+    /// Filters out injected and extended scan codes before passing received
+    /// keyboard scan codes the the provided closure. The first closure parameter
+    /// is the scan code as defined by the OS. The second parameter is `false` for
+    /// key down (press) events and `true` for key up (release) events.
+    /// If the closure returns `false`, the key event will not be forwarded to other
+    /// appliations.
     ///
     /// # Panics
     ///
     /// Panics when called more than once from the same thread.
-    pub fn set(callback: Callback) {
+    pub fn set(callback: impl FnMut(u16, bool) -> bool + 'static) {
         KEYBOARD_HOOK.with(|kbh| {
             let kbh = unsafe { &mut *kbh.get() };
             assert!(
@@ -45,7 +44,7 @@ impl KeyboardHook {
                     .as_mut()
                     .expect("Failed to install low-level keyboard hook.")
             };
-            kbh.callback = callback;
+            kbh.callback = Box::new(callback);
         })
     }
 }
@@ -76,7 +75,7 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
     );
 
     KEYBOARD_HOOK.with(|kbh| {
-        if injected || extended || ((*kbh.get()).callback)(input_event.scanCode, up) {
+        if injected || extended || ((*kbh.get()).callback)(input_event.scanCode as _, up) {
             CallNextHookEx(ptr::null_mut(), code, w_param, l_param)
         } else {
             -1
