@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 rusqlite = { version = "0.24.1", features = ["bundled"] }
 winapi = { version = "0.3.9", features = ["winuser"] }
+winit = "0.23.0"

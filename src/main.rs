@@ -4,7 +4,8 @@ use std::{collections::HashMap, ffi::OsStr, mem, os::windows::ffi::OsStrExt};
 
 use keyboard_hook::{KeyboardEvent, KeyboardHook};
 use rusqlite::{params, Connection};
-use winapi::{shared::windef::*, um::winuser::*};
+use winapi::um::winuser::*;
+use winit::event_loop::{ControlFlow, EventLoop};
 
 thread_local! {
     static DB: Connection = Connection::open("kb_events.db").unwrap();
@@ -111,6 +112,8 @@ fn send_char(kb_event: &KeyboardEvent, c: u16) {
 fn main() {
     log_init();
 
+    let event_loop = EventLoop::new();
+
     let mut l1 = HashMap::new();
     for (scan_code, row_map) in &[
         (0x10, OsStr::new("bu.,üpclmfx´")),
@@ -165,11 +168,7 @@ fn main() {
         }
     });
 
-    unsafe {
-        let mut msg: MSG = mem::zeroed();
-        while GetMessageW(&mut msg, 0 as HWND, 0, 0) > 0 {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-    }
+    event_loop.run(move |_, _, control_flow| {
+        *control_flow = ControlFlow::Wait;
+    });
 }
