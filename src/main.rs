@@ -101,22 +101,20 @@ fn main() {
             return false;
         }
 
-        if l3_active {
-            if let Some(&c) = l3
-                .get(&kb_event.scan_code())
+        let remapped_char = if l3_active {
+            l3.get(&kb_event.scan_code())
                 .or_else(|| l1.get(&kb_event.scan_code()))
-            {
-                send_char(kb_event, c);
-                return false;
-            }
         } else {
-            if let Some(&c) = l1.get(&kb_event.scan_code()) {
-                send_char(kb_event, c);
-                return false;
-            }
-        }
+            l1.get(&kb_event.scan_code())
+        };
 
-        true
+        match remapped_char {
+            Some(&c) => {
+                send_char(kb_event, c);
+                false
+            }
+            None => true,
+        }
     });
 
     unsafe {
