@@ -9,29 +9,25 @@ use winapi::{
 thread_local! {
     static KEYBOARD_HOOK: UnsafeCell<KeyboardHook> = UnsafeCell::new(KeyboardHook {
         handle: ptr::null_mut(),
-        callback: Box::new(|_, _| true),
+        callback: Box::new(|_| true),
     })
 }
 
 pub struct KeyboardHook {
     handle: HHOOK,
-    callback: Box<dyn FnMut(u16, bool) -> bool>,
+    callback: Box<dyn FnMut(&KeyboardEvent) -> bool>,
 }
 
 impl KeyboardHook {
     /// Sets the low-level keyboard hook for this thread.
     ///
-    /// Filters out injected and extended scan codes before passing received
-    /// keyboard scan codes the the provided closure. The first closure parameter
-    /// is the scan code as defined by the OS. The second parameter is `false` for
-    /// key down (press) events and `true` for key up (release) events.
     /// If the closure returns `false`, the key event will not be forwarded to other
     /// appliations.
     ///
     /// # Panics
     ///
     /// Panics when called more than once from the same thread.
-    pub fn set(callback: impl FnMut(u16, bool) -> bool + 'static) {
+    pub fn set(callback: impl FnMut(&KeyboardEvent) -> bool + 'static) {
         KEYBOARD_HOOK.with(|kbh| {
             let kbh = unsafe { &mut *kbh.get() };
             assert!(
@@ -55,9 +51,10 @@ impl Drop for KeyboardHook {
     }
 }
 
-pub struct KeyboardEvent<'a>(&'a KBDLLHOOKSTRUCT);
+#[repr(C)]
+pub struct KeyboardEvent(KBDLLHOOKSTRUCT);
 
-impl<'a> KeyboardEvent<'a> {
+impl KeyboardEvent {
     /// Key was released.
     pub fn up(&self) -> bool {
         self.0.flags & LLKHF_UP != 0
@@ -99,23 +96,13 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
         return -1;
     }
 
-    let input_event = KeyboardEvent(&*(l_param as *const _));
-
-    println!(
-        "{}{}{} scan code: {:#06X}, virtual key: {:#04X}",
-        if input_event.up() { '↑' } else { '↓' },
-        if input_event.is_injected() { 'i' } else { ' ' },
-        if input_event.is_extended() { 'e' } else { ' ' },
-        input_event.scan_code(),
-        input_event.virtual_key(),
-    );
+    let input_event = &*(l_param as *const _);
 
     KEYBOARD_HOOK.with(|kbh| {
-        if input_event.is_injected()
-            || input_event.is_extended()
-            || ((*kbh.get()).callback)(input_event.scan_code(), input_event.up()) {
+        if ((*kbh.get()).callback)(input_event) {
             CallNextHookEx(ptr::null_mut(), code, w_param, l_param)
         } else {
+            // Swallow the key event
             -1
         }
     })

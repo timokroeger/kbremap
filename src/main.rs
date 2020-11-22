@@ -2,15 +2,15 @@ mod keyboard_hook;
 
 use std::{collections::HashMap, ffi::OsStr, mem, os::windows::ffi::OsStrExt};
 
-use keyboard_hook::KeyboardHook;
+use keyboard_hook::{KeyboardEvent, KeyboardHook};
 use winapi::{shared::windef::*, um::winuser::*};
 
-fn send_unicode(up: bool, c: u16) {
+fn send_unicode(kb_event: &KeyboardEvent, c: u16) {
     unsafe {
         let mut kb_input: KEYBDINPUT = mem::zeroed();
         kb_input.wScan = c;
         kb_input.dwFlags = KEYEVENTF_UNICODE;
-        if up {
+        if kb_event.up() {
             kb_input.dwFlags |= KEYEVENTF_KEYUP;
         }
 
@@ -22,12 +22,12 @@ fn send_unicode(up: bool, c: u16) {
     }
 }
 
-fn send_key(scan_code: u16, up: bool, vk: u8) {
+fn send_key(kb_event: &KeyboardEvent, vk: u8) {
     unsafe {
         let mut kb_input: KEYBDINPUT = mem::zeroed();
         kb_input.wVk = vk as _;
-        kb_input.wScan = scan_code;
-        if up {
+        kb_input.wScan = kb_event.scan_code();
+        if kb_event.up() {
             kb_input.dwFlags |= KEYEVENTF_KEYUP;
         }
 
@@ -39,7 +39,7 @@ fn send_key(scan_code: u16, up: bool, vk: u8) {
     }
 }
 
-fn send_char(scan_code: u16, up: bool, c: u16) {
+fn send_char(kb_event: &KeyboardEvent, c: u16) {
     unsafe {
         // TODO: Improve layout handling
         let vk_state = VkKeyScanExW(c, GetKeyboardLayout(0));
@@ -48,9 +48,9 @@ fn send_char(scan_code: u16, up: bool, c: u16) {
         // 1. There is no key for the character available on the current keyboard layout
         // 2. A modifier (bits the upper byte) is required to type this character
         if vk_state == -1 || vk_state & 0xF00 != 0 {
-            send_unicode(up, c);
+            send_unicode(kb_event, c);
         } else {
-            send_key(scan_code, up, vk_state as u8);
+            send_key(kb_event, vk_state as u8);
         }
     }
 }
@@ -80,21 +80,38 @@ fn main() {
 
     let mut l3_active = false;
 
-    KeyboardHook::set(move |scan_code, up| {
+    KeyboardHook::set(move |kb_event| {
+        println!(
+            "{}{}{} scan code: {:#06X}, virtual key: {:#04X}",
+            if kb_event.up() { '↑' } else { '↓' },
+            if kb_event.is_injected() { 'i' } else { ' ' },
+            if kb_event.is_extended() { 'e' } else { ' ' },
+            kb_event.scan_code(),
+            kb_event.virtual_key(),
+        );
+
+        // Do not map out injected and extended scan codes.
+        if kb_event.is_injected() || kb_event.is_extended() {
+            return true;
+        }
+
         // Layer3 is activated by the `caps lock` or `#` key.
-        if scan_code == 0x3A || scan_code == 0x2B {
-            l3_active = !up;
+        if kb_event.scan_code() == 0x3A || kb_event.scan_code() == 0x2B {
+            l3_active = !kb_event.up();
             return false;
         }
 
         if l3_active {
-            if let Some(&c) = l3.get(&scan_code) {
-                send_char(scan_code, up, c);
+            if let Some(&c) = l3
+                .get(&kb_event.scan_code())
+                .or_else(|| l1.get(&kb_event.scan_code()))
+            {
+                send_char(kb_event, c);
                 return false;
             }
         } else {
-            if let Some(&c) = l1.get(&scan_code) {
-                send_char(scan_code, up, c);
+            if let Some(&c) = l1.get(&kb_event.scan_code()) {
+                send_char(kb_event, c);
                 return false;
             }
         }
