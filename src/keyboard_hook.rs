@@ -55,27 +55,65 @@ impl Drop for KeyboardHook {
     }
 }
 
+pub struct KeyboardEvent<'a>(&'a KBDLLHOOKSTRUCT);
+
+impl<'a> KeyboardEvent<'a> {
+    /// Key was released.
+    pub fn up(&self) -> bool {
+        self.0.flags & LLKHF_UP != 0
+    }
+
+    /// Key was pressed.
+    pub fn down(&self) -> bool {
+        !self.up()
+    }
+
+    /// Scan code as defined by the keyboard.
+    pub fn scan_code(&self) -> u16 {
+        self.0.scanCode as _
+    }
+
+    /// Virtual key as defined by the layout set by windows.
+    ///
+    /// https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+    pub fn virtual_key(&self) -> u8 {
+        self.0.vkCode as _
+    }
+
+    /// Time in milliseconds since boot.
+    pub fn time(&self) -> u32 {
+        self.0.time
+    }
+
+    pub fn is_injected(&self) -> bool {
+        self.0.flags & LLKHF_INJECTED != 0
+    }
+
+    pub fn is_extended(&self) -> bool {
+        self.0.flags & LLKHF_EXTENDED != 0
+    }
+}
+
 unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     if code != 0 {
         return -1;
     }
 
-    let input_event = (l_param as *const KBDLLHOOKSTRUCT).as_ref().unwrap();
-    let up = input_event.flags & LLKHF_UP != 0;
-    let injected = input_event.flags & LLKHF_INJECTED != 0;
-    let extended = input_event.flags & LLKHF_EXTENDED != 0;
+    let input_event = KeyboardEvent(&*(l_param as *const _));
 
     println!(
-        "{}{}{} scan code: {:#04X}, virtual key: {:#04X}",
-        if up { '↑' } else { '↓' },
-        if injected { 'i' } else { ' ' },
-        if extended { 'e' } else { ' ' },
-        input_event.scanCode,
-        input_event.vkCode
+        "{}{}{} scan code: {:#06X}, virtual key: {:#04X}",
+        if input_event.up() { '↑' } else { '↓' },
+        if input_event.is_injected() { 'i' } else { ' ' },
+        if input_event.is_extended() { 'e' } else { ' ' },
+        input_event.scan_code(),
+        input_event.virtual_key(),
     );
 
     KEYBOARD_HOOK.with(|kbh| {
-        if injected || extended || ((*kbh.get()).callback)(input_event.scanCode as _, up) {
+        if input_event.is_injected()
+            || input_event.is_extended()
+            || ((*kbh.get()).callback)(input_event.scan_code(), input_event.up()) {
             CallNextHookEx(ptr::null_mut(), code, w_param, l_param)
         } else {
             -1
