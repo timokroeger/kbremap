@@ -72,7 +72,7 @@ impl KeyboardEvent {
 
     /// Virtual key as defined by the layout set by windows.
     ///
-    /// https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+    /// <https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes>
     pub fn virtual_key(&self) -> u8 {
         self.0.vkCode as _
     }

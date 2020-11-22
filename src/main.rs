@@ -78,7 +78,7 @@ fn send_unicode(kb_event: &KeyboardEvent, c: u16) {
 fn send_key(kb_event: &KeyboardEvent, vk: u8) {
     unsafe {
         let mut kb_input: KEYBDINPUT = mem::zeroed();
-        kb_input.wVk = vk as _;
+        kb_input.wVk = vk as u16;
         kb_input.wScan = kb_event.scan_code();
         if kb_event.up() {
             kb_input.dwFlags |= KEYEVENTF_KEYUP;
@@ -168,8 +168,8 @@ fn main() {
     unsafe {
         let mut msg: MSG = mem::zeroed();
         while GetMessageW(&mut msg, 0 as HWND, 0, 0) > 0 {
-            TranslateMessage(&mut msg);
-            DispatchMessageW(&mut msg);
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
         }
     }
 }
