@@ -1,13 +1,24 @@
+#![windows_subsystem = "windows"]
+
 mod keyboard_hook;
 
-use std::{collections::HashMap, ffi::OsStr, mem, os::windows::ffi::OsStrExt};
+use std::{
+    collections::HashMap, ffi::OsStr, mem, os::windows::ffi::OsStrExt, sync::atomic::AtomicBool,
+    sync::atomic::Ordering,
+};
 
 use keyboard_hook::{KeyboardEvent, KeyboardHook};
 use rusqlite::{params, Connection};
+
+use trayicon::{Icon, TrayIconBuilder};
 use winapi::um::winuser::*;
-use winit::event_loop::{ControlFlow, EventLoop};
+use winit::{
+    event::Event,
+    event_loop::{ControlFlow, EventLoop},
+};
 
 thread_local! {
+    static ENABLED: AtomicBool = AtomicBool::new(true);
     static DB: Connection = Connection::open("kb_events.db").unwrap();
 }
 
@@ -112,7 +123,27 @@ fn send_char(kb_event: &KeyboardEvent, c: u16) {
 fn main() {
     log_init();
 
-    let event_loop = EventLoop::new();
+    #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+    enum Events {
+        ToggleEnabled,
+        Exit,
+    };
+    let event_loop = EventLoop::<Events>::with_user_event();
+    let event_loop_proxy = event_loop.create_proxy();
+
+    let icon_enabled = include_bytes!("keyboard.ico");
+    let icon_disabled = include_bytes!("keyboard_delete.ico");
+
+    // Double click to exit.
+    let mut tray_icon = TrayIconBuilder::new()
+        .sender_winit(event_loop_proxy)
+        .icon_from_buffer(icon_enabled)
+        .on_click(Events::ToggleEnabled)
+        .on_double_click(Events::Exit)
+        .build()
+        .unwrap();
+    let icon_enabled = Icon::from_buffer(icon_enabled, None, None).unwrap();
+    let icon_disabled = Icon::from_buffer(icon_disabled, None, None).unwrap();
 
     let mut l1 = HashMap::new();
     for (scan_code, row_map) in &[
@@ -139,6 +170,10 @@ fn main() {
     let mut l3_active = false;
 
     KeyboardHook::set(move |kb_event| {
+        if !ENABLED.with(|enabled| enabled.load(Ordering::SeqCst)) {
+            return true;
+        }
+
         log_kb_event(kb_event);
 
         // Do not map out injected and extended scan codes.
@@ -168,7 +203,19 @@ fn main() {
         }
     });
 
-    event_loop.run(move |_, _, control_flow| {
+    event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
+
+        match event {
+            Event::UserEvent(Events::ToggleEnabled) => ENABLED.with(|enabled| {
+                if enabled.fetch_xor(true, Ordering::SeqCst) {
+                    tray_icon.set_icon(&icon_disabled).unwrap();
+                } else {
+                    tray_icon.set_icon(&icon_enabled).unwrap();
+                }
+            }),
+            Event::UserEvent(Events::Exit) => *control_flow = ControlFlow::Exit,
+            _ => {}
+        }
     });
 }
