@@ -3,7 +3,60 @@ mod keyboard_hook;
 use std::{collections::HashMap, ffi::OsStr, mem, os::windows::ffi::OsStrExt};
 
 use keyboard_hook::{KeyboardEvent, KeyboardHook};
+use rusqlite::{params, Connection};
 use winapi::{shared::windef::*, um::winuser::*};
+
+thread_local! {
+    static DB: Connection = Connection::open("kb_events.db").unwrap();
+}
+
+fn log_init() {
+    DB.with(|db| {
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS kb_events(
+            id INTEGER PRIMARY KEY,
+            scan_code INTEGER,
+            extended BOOL,
+            virtual_key INTEGER,
+            up BOOL,
+            time INTEGER
+        )",
+            params![],
+        )
+        .unwrap()
+    });
+}
+
+fn log_kb_event(kb_event: &KeyboardEvent) {
+    println!(
+        "{}{}{} scan code: {:#06X}, virtual key: {:#04X}",
+        if kb_event.up() { '↑' } else { '↓' },
+        if kb_event.is_injected() { 'i' } else { ' ' },
+        if kb_event.is_extended() { 'e' } else { ' ' },
+        kb_event.scan_code(),
+        kb_event.virtual_key(),
+    );
+
+    DB.with(|db| {
+        db.execute(
+            "INSERT INTO kb_events(
+                scan_code,
+                extended,
+                virtual_key,
+                up,
+                time
+            ) VALUES (?, ?, ?, ?, ?)",
+            params![
+                kb_event.scan_code(),
+                kb_event.is_extended(),
+                kb_event.virtual_key(),
+                kb_event.up(),
+                kb_event.time(),
+            ],
+        )
+        .unwrap()
+    });
+}
 
 fn send_unicode(kb_event: &KeyboardEvent, c: u16) {
     unsafe {
@@ -56,6 +109,8 @@ fn send_char(kb_event: &KeyboardEvent, c: u16) {
 }
 
 fn main() {
+    log_init();
+
     let mut l1 = HashMap::new();
     for (scan_code, row_map) in &[
         (0x10, OsStr::new("bu.,üpclmfx´")),
@@ -81,14 +136,7 @@ fn main() {
     let mut l3_active = false;
 
     KeyboardHook::set(move |kb_event| {
-        println!(
-            "{}{}{} scan code: {:#06X}, virtual key: {:#04X}",
-            if kb_event.up() { '↑' } else { '↓' },
-            if kb_event.is_injected() { 'i' } else { ' ' },
-            if kb_event.is_extended() { 'e' } else { ' ' },
-            kb_event.scan_code(),
-            kb_event.virtual_key(),
-        );
+        log_kb_event(kb_event);
 
         // Do not map out injected and extended scan codes.
         if kb_event.is_injected() || kb_event.is_extended() {

@@ -4,6 +4,6 @@ version = "0.1.0"
 authors = ["Timo Kröger <timokroeger93@gmail.com>"]
 edition = "2018"
 
-[dependencies.winapi]
-version = "0.3.9"
-features = ["winuser"]
+[dependencies]
+rusqlite = { version = "0.24.1", features = ["bundled"] }
+winapi = { version = "0.3.9", features = ["winuser"] }
