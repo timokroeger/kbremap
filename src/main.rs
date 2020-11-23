@@ -41,9 +41,8 @@ fn log_init() {
 
 fn log_kb_event(kb_event: &KeyboardEvent) {
     println!(
-        "{}{}{} scan code: {:#06X}, virtual key: {:#04X}",
+        "{} scan code: {}{:#06X}, virtual key: {:#04X}",
         if kb_event.up() { '↑' } else { '↓' },
-        if kb_event.is_injected() { 'i' } else { ' ' },
         if kb_event.is_extended() { 'e' } else { ' ' },
         kb_event.scan_code(),
         kb_event.virtual_key(),
@@ -174,15 +173,15 @@ fn main() {
 
     let mut l3_active = false;
 
-    KeyboardHook::set(move |kb_event| {
+    let _kbhook = KeyboardHook::set(move |kb_event| {
         if !ENABLED.with(|enabled| enabled.load(Ordering::SeqCst)) {
             return true;
         }
 
         log_kb_event(kb_event);
 
-        // Do not map out injected and extended scan codes.
-        if kb_event.is_injected() || kb_event.is_extended() {
+        // TODO: Allow to remap extended scan codes.
+        if kb_event.is_extended() {
             return true;
         }
 
