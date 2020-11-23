@@ -2,10 +2,7 @@
 
 mod keyboard_hook;
 
-use std::{
-    collections::HashMap, ffi::OsStr, mem, os::windows::ffi::OsStrExt, sync::atomic::AtomicBool,
-    sync::atomic::Ordering,
-};
+use std::{collections::HashMap, ffi::OsStr, mem, os::windows::ffi::OsStrExt};
 
 use keyboard_hook::{KeyboardEvent, KeyboardHook};
 
@@ -15,8 +12,6 @@ use winit::{
     event::Event,
     event_loop::{ControlFlow, EventLoop},
 };
-
-thread_local!(static ENABLED: AtomicBool = AtomicBool::new(true));
 
 fn send_unicode(kb_event: &KeyboardEvent, c: u16) {
     unsafe {
@@ -118,10 +113,11 @@ fn main() {
         }
     }
 
+    let mut bypass = false;
     let mut l3_active = false;
 
     let _kbhook = KeyboardHook::set(move |kb_event| {
-        if !ENABLED.with(|enabled| enabled.load(Ordering::SeqCst)) {
+        if bypass {
             return true;
         }
 
@@ -156,13 +152,14 @@ fn main() {
         *control_flow = ControlFlow::Wait;
 
         match event {
-            Event::UserEvent(Events::ToggleEnabled) => ENABLED.with(|enabled| {
-                if enabled.fetch_xor(true, Ordering::SeqCst) {
+            Event::UserEvent(Events::ToggleEnabled) => {
+                bypass = !bypass;
+                if bypass {
                     tray_icon.set_icon(&icon_disabled).unwrap();
                 } else {
                     tray_icon.set_icon(&icon_enabled).unwrap();
                 }
-            }),
+            }
             Event::UserEvent(Events::DebugOutput) => unsafe {
                 AllocConsole();
             },
