@@ -8,7 +8,6 @@ use std::{
 };
 
 use keyboard_hook::{KeyboardEvent, KeyboardHook};
-use rusqlite::{params, Connection};
 
 use trayicon::{Icon, MenuBuilder, TrayIconBuilder};
 use winapi::um::{consoleapi::*, winuser::*};
@@ -17,57 +16,7 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
 };
 
-thread_local! {
-    static ENABLED: AtomicBool = AtomicBool::new(true);
-    static DB: Connection = Connection::open("kb_events.db").unwrap();
-}
-
-fn log_init() {
-    DB.with(|db| {
-        db.execute(
-            "CREATE TABLE IF NOT EXISTS kb_events(
-            id INTEGER PRIMARY KEY,
-            scan_code INTEGER,
-            extended BOOL,
-            virtual_key INTEGER,
-            up BOOL,
-            time INTEGER
-        )",
-            params![],
-        )
-        .unwrap()
-    });
-}
-
-fn log_kb_event(kb_event: &KeyboardEvent) {
-    println!(
-        "{} scan code: {}{:#06X}, virtual key: {:#04X}",
-        if kb_event.up() { '↑' } else { '↓' },
-        if kb_event.is_extended() { 'e' } else { ' ' },
-        kb_event.scan_code(),
-        kb_event.virtual_key(),
-    );
-
-    DB.with(|db| {
-        db.execute(
-            "INSERT INTO kb_events(
-                scan_code,
-                extended,
-                virtual_key,
-                up,
-                time
-            ) VALUES (?, ?, ?, ?, ?)",
-            params![
-                kb_event.scan_code(),
-                kb_event.is_extended(),
-                kb_event.virtual_key(),
-                kb_event.up(),
-                kb_event.time(),
-            ],
-        )
-        .unwrap()
-    });
-}
+thread_local!(static ENABLED: AtomicBool = AtomicBool::new(true));
 
 fn send_unicode(kb_event: &KeyboardEvent, c: u16) {
     unsafe {
@@ -120,8 +69,6 @@ fn send_char(kb_event: &KeyboardEvent, c: u16) {
 }
 
 fn main() {
-    log_init();
-
     #[derive(Debug, Copy, Clone, Eq, PartialEq)]
     enum Events {
         ToggleEnabled,
@@ -177,8 +124,6 @@ fn main() {
         if !ENABLED.with(|enabled| enabled.load(Ordering::SeqCst)) {
             return true;
         }
-
-        log_kb_event(kb_event);
 
         // TODO: Allow to remap extended scan codes.
         if kb_event.is_extended() {
