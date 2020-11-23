@@ -91,32 +91,36 @@ fn main() {
     let icon_enabled = Icon::from_buffer(icon_enabled, None, None).unwrap();
     let icon_disabled = Icon::from_buffer(icon_disabled, None, None).unwrap();
 
-    let mut l1 = HashMap::new();
+    let mut base_layer = HashMap::new();
     for (scan_code, row_map) in &[
         (0x10, OsStr::new("bu.,üpclmfx´")),
         (0x1E, OsStr::new("hieaodtrnsß")),
         (0x2C, OsStr::new("kyöäqjgwvz")),
     ] {
         for (i, key) in row_map.encode_wide().enumerate() {
-            l1.insert(scan_code + i as u16, key);
+            base_layer.insert(scan_code + i as u16, key);
         }
     }
 
-    let mut l3 = HashMap::new();
+    let mut symbol_layer = HashMap::new();
     for (scan_code, row_map) in &[
         (0x10, OsStr::new("…_[]^!<>=&")),
         (0x1E, OsStr::new("\\/{}*?()-:@")),
         (0x2C, OsStr::new("#$|~`+%\"';")),
     ] {
         for (i, key) in row_map.encode_wide().enumerate() {
-            l3.insert(scan_code + i as u16, key);
+            symbol_layer.insert(scan_code + i as u16, key);
         }
     }
 
     let mut bypass = false;
-    let mut l3_active = false;
 
-    let _kbhook = KeyboardHook::set(move |kb_event| {
+    let layers = vec![
+        (&[0x3A, 0x2B], symbol_layer), // Layer3 is activated by the `caps lock` or `#` key.
+    ];
+    let mut active_layers = Vec::new();
+
+    let _kbhook = KeyboardHook::set(|kb_event| {
         if bypass {
             return true;
         }
@@ -126,18 +130,28 @@ fn main() {
             return true;
         }
 
-        // Layer3 is activated by the `caps lock` or `#` key.
-        if kb_event.scan_code() == 0x3A || kb_event.scan_code() == 0x2B {
-            l3_active = !kb_event.up();
+        // Handle layer activation
+        if let Some((_, layer)) = layers
+            .iter()
+            .find(|(&modifiers, _)| modifiers.contains(&kb_event.scan_code()))
+        {
+            if kb_event.down() {
+                active_layers.push(layer);
+            } else {
+                // Remove from active layers
+                active_layers
+                    .iter()
+                    .rposition(|&l| l == layer)
+                    .map(|pos| active_layers.remove(pos));
+            }
             return false;
         }
 
-        let remapped_char = if l3_active {
-            l3.get(&kb_event.scan_code())
-                .or_else(|| l1.get(&kb_event.scan_code()))
-        } else {
-            l1.get(&kb_event.scan_code())
-        };
+        let remapped_char = active_layers
+            .last()
+            .map(|&x| x)
+            .unwrap_or(&base_layer)
+            .get(&kb_event.scan_code());
 
         match remapped_char {
             Some(&c) => {
