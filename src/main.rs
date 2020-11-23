@@ -10,8 +10,8 @@ use std::{
 use keyboard_hook::{KeyboardEvent, KeyboardHook};
 use rusqlite::{params, Connection};
 
-use trayicon::{Icon, TrayIconBuilder};
-use winapi::um::winuser::*;
+use trayicon::{Icon, MenuBuilder, TrayIconBuilder};
+use winapi::um::{consoleapi::*, winuser::*};
 use winit::{
     event::Event,
     event_loop::{ControlFlow, EventLoop},
@@ -126,6 +126,7 @@ fn main() {
     #[derive(Debug, Copy, Clone, Eq, PartialEq)]
     enum Events {
         ToggleEnabled,
+        DebugOutput,
         Exit,
     };
     let event_loop = EventLoop::<Events>::with_user_event();
@@ -139,7 +140,11 @@ fn main() {
         .sender_winit(event_loop_proxy)
         .icon_from_buffer(icon_enabled)
         .on_click(Events::ToggleEnabled)
-        .on_double_click(Events::Exit)
+        .menu(
+            MenuBuilder::new()
+                .item("Show debug output", Events::DebugOutput)
+                .item("E&xit", Events::Exit),
+        )
         .build()
         .unwrap();
     let icon_enabled = Icon::from_buffer(icon_enabled, None, None).unwrap();
@@ -214,6 +219,9 @@ fn main() {
                     tray_icon.set_icon(&icon_enabled).unwrap();
                 }
             }),
+            Event::UserEvent(Events::DebugOutput) => unsafe {
+                AllocConsole();
+            },
             Event::UserEvent(Events::Exit) => *control_flow = ControlFlow::Exit,
             _ => {}
         }
