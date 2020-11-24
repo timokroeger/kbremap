@@ -2,12 +2,12 @@
 
 mod keyboard_hook;
 
-use std::{collections::HashMap, ffi::OsStr, os::windows::ffi::OsStrExt};
+use std::collections::HashMap;
 
 use keyboard_hook::{KeyboardHook, Remap};
 
 use trayicon::{Icon, MenuBuilder, TrayIconBuilder};
-use winapi::um::{consoleapi::*};
+use winapi::um::consoleapi::*;
 use winit::{
     event::Event,
     event_loop::{ControlFlow, EventLoop},
@@ -43,22 +43,22 @@ fn main() {
 
     let mut base_layer = HashMap::new();
     for (scan_code, row_map) in &[
-        (0x10, OsStr::new("bu.,üpclmfx´")),
-        (0x1E, OsStr::new("hieaodtrnsß")),
-        (0x2C, OsStr::new("kyöäqjgwvz")),
+        (0x10, "bu.,üpclmfx´"),
+        (0x1E, "hieaodtrnsß"),
+        (0x2C, "kyöäqjgwvz"),
     ] {
-        for (i, key) in row_map.encode_wide().enumerate() {
+        for (i, key) in row_map.chars().enumerate() {
             base_layer.insert(scan_code + i as u16, key);
         }
     }
 
     let mut symbol_layer = HashMap::new();
     for (scan_code, row_map) in &[
-        (0x10, OsStr::new("…_[]^!<>=&")),
-        (0x1E, OsStr::new("\\/{}*?()-:@")),
-        (0x2C, OsStr::new("#$|~`+%\"';")),
+        (0x10, "…_[]^!<>=&"),
+        (0x1E, "\\/{}*?()-:@"),
+        (0x2C, "#$|~`+%\"';"),
     ] {
-        for (i, key) in row_map.encode_wide().enumerate() {
+        for (i, key) in row_map.chars().enumerate() {
             symbol_layer.insert(scan_code + i as u16, key);
         }
     }
@@ -71,14 +71,6 @@ fn main() {
     let mut active_layers = Vec::new();
 
     let _kbhook = KeyboardHook::set(|kb_event| {
-        println!(
-            "{} scan code: {}{:#06X}, virtual key: {:#04X}",
-            if kb_event.up() { '↑' } else { '↓' },
-            if kb_event.is_extended() { 'e' } else { ' ' },
-            kb_event.scan_code(),
-            kb_event.virtual_key(),
-        );
-
         if bypass {
             return Remap::Transparent;
         }

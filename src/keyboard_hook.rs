@@ -1,4 +1,6 @@
-use std::{cell::RefCell, marker::PhantomData, mem, ptr};
+use std::{
+    cell::RefCell, ffi::OsString, marker::PhantomData, mem, os::windows::ffi::OsStrExt, ptr,
+};
 
 use winapi::{
     ctypes::*,
@@ -16,9 +18,10 @@ pub struct KeyboardHook<'a> {
 impl<'a> KeyboardHook<'a> {
     /// Sets the low-level keyboard hook for this thread.
     ///
-    /// Remaps the key event to a UTF-16 character if the closure returns `Some`.
-    /// Sends the character with a single virtual key if it is available on the current layout.
-    /// Uses `VK_PACKET` to pass Unicode characters as if they were keystrokes for everything else.
+    /// Remaps the key event to a unicode character if the closure returns `Some`.
+    /// Sends the character with a single virtual key if the character is available
+    /// on the current layout. Uses `VK_PACKET` to pass Unicode characters as if
+    /// they were keystrokes for everything else.
     ///
     /// Returns `None` when called more than once from the same thread.
     pub fn set(callback: impl FnMut(&KeyboardEvent) -> Remap + 'a) -> Option<KeyboardHook<'a>> {
@@ -89,10 +92,11 @@ impl KeyboardEvent {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Remap {
     Transparent,
     Ignore,
-    Character(u16),
+    Character(char),
 }
 
 unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
@@ -108,17 +112,30 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
         return CallNextHookEx(ptr::null_mut(), code, w_param, l_param);
     }
 
-    HOOK.with(|hook| {
-        let remap = hook.borrow_mut().as_mut().unwrap()(kb_event);
-        match remap {
-            Remap::Transparent => CallNextHookEx(ptr::null_mut(), code, w_param, l_param),
-            Remap::Ignore => -1,
-            Remap::Character(c) => {
-                send_char(kb_event, c);
-                -1
-            }
+    print!(
+        "{} scan code: {}{:#06X}, virtual key: {:#04X}, ",
+        if kb_event.up() { '↑' } else { '↓' },
+        if kb_event.is_extended() { 'e' } else { ' ' },
+        kb_event.scan_code(),
+        kb_event.virtual_key(),
+    );
+
+    let remap = HOOK.with(|hook| hook.borrow_mut().as_mut().unwrap()(kb_event));
+
+    match remap {
+        Remap::Transparent => {
+            println!("forwarded");
+            CallNextHookEx(ptr::null_mut(), code, w_param, l_param)
         }
-    })
+        Remap::Ignore => {
+            println!("ignored");
+            -1
+        }
+        Remap::Character(c) => {
+            send_char(kb_event, c);
+            -1
+        }
+    }
 }
 
 fn send_unicode(kb_event: &KeyboardEvent, c: u16) {
@@ -157,17 +174,22 @@ fn send_key(kb_event: &KeyboardEvent, vk: u8) {
     }
 }
 
-fn send_char(kb_event: &KeyboardEvent, c: u16) {
+fn send_char(kb_event: &KeyboardEvent, c: char) {
     unsafe {
+        // Convert to UTF-16
+        let c16 = OsString::from(c.to_string()).encode_wide().next().unwrap();
+
         // TODO: Improve layout handling
-        let vk_state = VkKeyScanExW(c, GetKeyboardLayout(0));
+        let vk_state = VkKeyScanExW(c16, GetKeyboardLayout(0));
 
         // Send the character as unicode input if:
         // 1. There is no key for the character available on the current keyboard layout
         // 2. A modifier (bits the upper byte) is required to type this character
         if vk_state == -1 || vk_state & 0xF00 != 0 {
-            send_unicode(kb_event, c);
+            println!("remapped to `{}` as unicode input", c);
+            send_unicode(kb_event, c16);
         } else {
+            println!("remapped to `{}` as virtual key", c);
             send_key(kb_event, vk_state as u8);
         }
     }
