@@ -67,8 +67,13 @@ impl KeyboardEvent {
     }
 
     /// Scan code as defined by the keyboard.
+    /// Extended keycodes have the three most significant bits set (0xExxx).
     pub fn scan_code(&self) -> u16 {
-        self.0.scanCode as _
+        (if self.0.flags & LLKHF_EXTENDED != 0 {
+            self.0.scanCode | 0xE000
+        } else {
+            self.0.scanCode
+        }) as _
     }
 
     /// Virtual key as defined by the layout set by windows.
@@ -85,10 +90,6 @@ impl KeyboardEvent {
 
     fn is_injected(&self) -> bool {
         self.0.flags & LLKHF_INJECTED != 0
-    }
-
-    pub fn is_extended(&self) -> bool {
-        self.0.flags & LLKHF_EXTENDED != 0
     }
 }
 
@@ -113,9 +114,8 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
     }
 
     print!(
-        "{} scan code: {}{:#06X}, virtual key: {:#04X}, ",
+        "{} scan code: {:#06X}, virtual key: {:#04X}, ",
         if kb_event.up() { '↑' } else { '↓' },
-        if kb_event.is_extended() { 'e' } else { ' ' },
         kb_event.scan_code(),
         kb_event.virtual_key(),
     );

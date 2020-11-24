@@ -51,11 +51,6 @@ fn main() {
             return Remap::Transparent;
         }
 
-        // TODO: Allow to remap extended scan codes.
-        if key.is_extended() {
-            return Remap::Transparent;
-        }
-
         // Check if we received an already active layer modifier key.
         if let Some(pos) = layer_modifiers
             .iter()
