@@ -2,7 +2,10 @@
 
 mod keyboard_hook;
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use keyboard_hook::{KeyboardHook, Remap};
 
@@ -12,6 +15,8 @@ use winit::{
     event::Event,
     event_loop::{ControlFlow, EventLoop},
 };
+
+static BYPASS: AtomicBool = AtomicBool::new(false);
 
 fn main() {
     #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -63,15 +68,13 @@ fn main() {
         }
     }
 
-    let mut bypass = false;
-
     let layers = vec![
         (&[0x3A, 0x2B], symbol_layer), // Layer3 is activated by the `caps lock` or `#` key.
     ];
     let mut layer_modifiers = Vec::new();
 
     let _kbhook = KeyboardHook::set(|key| {
-        if bypass {
+        if BYPASS.load(Ordering::SeqCst) {
             return Remap::Transparent;
         }
 
@@ -126,8 +129,7 @@ fn main() {
 
         match event {
             Event::UserEvent(Events::ToggleEnabled) => {
-                bypass = !bypass;
-                if bypass {
+                if !BYPASS.fetch_xor(true, Ordering::SeqCst) {
                     tray_icon.set_icon(&icon_disabled).unwrap();
                 } else {
                     tray_icon.set_icon(&icon_enabled).unwrap();
