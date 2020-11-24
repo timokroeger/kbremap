@@ -5,6 +5,7 @@ authors = ["Timo Kröger <timokroeger93@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+toml = "0.5.7"
 trayicon = { version = "0.1.0-beta.18", features = ["winit"] }
 winapi = { version = "0.3.9", features = ["consoleapi", "winuser"] }
 winit = "0.22.0"

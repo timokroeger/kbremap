@@ -1,0 +1,17 @@
+[layers.base]
+map = [
+    { scan_code = 0x10, characters = "bu.,üpclmfx´" },
+    { scan_code = 0x1E, characters = "hieaodtrnsß" },
+    { scan_code = 0x2C, characters = "kyöäqjgwvz" },
+]
+
+[layers.symbols]
+modifiers = [
+    0x3A, # caps lock
+    0x2B, # '\' on US layout, `#` key on german layout
+]
+map = [
+    { scan_code = 0x10, characters = "…_[]^!<>=&" },
+    { scan_code = 0x1E, characters = "\\/{}*?()-:@" },
+    { scan_code = 0x2C, characters = "#$|~`+%\"';" },
+]

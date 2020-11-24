@@ -4,11 +4,12 @@ mod keyboard_hook;
 
 use std::{
     collections::HashMap,
+    convert::TryInto,
+    fs,
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use keyboard_hook::{KeyboardHook, Remap};
-
+use toml::Value;
 use trayicon::{Icon, MenuBuilder, TrayIconBuilder};
 use winapi::um::consoleapi::*;
 use winit::{
@@ -16,36 +17,44 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
 };
 
+use keyboard_hook::{KeyboardHook, Remap};
+
 static BYPASS: AtomicBool = AtomicBool::new(false);
 
 fn main() {
     let mut base_layer = HashMap::new();
-    for (scan_code, row_map) in &[
-        (0x10, "bu.,üpclmfx´"),
-        (0x1E, "hieaodtrnsß"),
-        (0x2C, "kyöäqjgwvz"),
-    ] {
-        for (i, key) in row_map.chars().enumerate() {
-            base_layer.insert(scan_code + i as u16, key);
+    let mut layers = Vec::new();
+    if let Ok(config_str) = fs::read_to_string("config.toml") {
+        // TODO: Improve error reporting (there is no console to print the panic).
+        let config: Value = config_str.parse().unwrap();
+        for (_layer_name, layer) in config["layers"].as_table().unwrap() {
+            let mut map = HashMap::new();
+            for mapping in layer["map"].as_array().unwrap() {
+                let scan_code: u16 = mapping["scan_code"]
+                    .as_integer()
+                    .unwrap()
+                    .try_into()
+                    .unwrap();
+                let characters = mapping["characters"].as_str().unwrap();
+                for (i, key) in characters.chars().enumerate() {
+                    map.insert(scan_code + i as u16, key);
+                }
+            }
+
+            if let Some(mods) = layer.get("modifiers").and_then(Value::as_array) {
+                layers.push((
+                    mods.iter()
+                        .map(|sc| sc.as_integer().unwrap() as u16)
+                        .collect::<Vec<u16>>(),
+                    map,
+                ));
+            } else {
+                base_layer.extend(map);
+            }
         }
     }
 
-    let mut symbol_layer = HashMap::new();
-    for (scan_code, row_map) in &[
-        (0x10, "…_[]^!<>=&"),
-        (0x1E, "\\/{}*?()-:@"),
-        (0x2C, "#$|~`+%\"';"),
-    ] {
-        for (i, key) in row_map.chars().enumerate() {
-            symbol_layer.insert(scan_code + i as u16, key);
-        }
-    }
-
-    let layers = vec![
-        (&[0x3A, 0x2B], symbol_layer), // Layer3 is activated by the `caps lock` or `#` key.
-    ];
     let mut layer_modifiers = Vec::new();
-
     let _kbhook = KeyboardHook::set(|key| {
         if BYPASS.load(Ordering::SeqCst) {
             return Remap::Transparent;
@@ -67,7 +76,7 @@ fn main() {
         if key.down()
             && layers
                 .iter()
-                .any(|(&modifiers, _)| modifiers.contains(&key.scan_code()))
+                .any(|(modifiers, _)| modifiers.contains(&key.scan_code()))
         {
             // Activate layer by pushing the modifier onto a stack.
             layer_modifiers.push(key.scan_code());
