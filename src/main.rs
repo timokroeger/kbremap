@@ -68,41 +68,53 @@ fn main() {
     let layers = vec![
         (&[0x3A, 0x2B], symbol_layer), // Layer3 is activated by the `caps lock` or `#` key.
     ];
-    let mut active_layers = Vec::new();
+    let mut layer_modifiers = Vec::new();
 
-    let _kbhook = KeyboardHook::set(|kb_event| {
+    let _kbhook = KeyboardHook::set(|key| {
         if bypass {
             return Remap::Transparent;
         }
 
         // TODO: Allow to remap extended scan codes.
-        if kb_event.is_extended() {
+        if key.is_extended() {
             return Remap::Transparent;
         }
 
-        // Handle layer activation
-        if let Some((_, layer)) = layers
+        // Check if we received an already active layer modifier key.
+        if let Some(pos) = layer_modifiers
             .iter()
-            .find(|(&modifiers, _)| modifiers.contains(&kb_event.scan_code()))
+            .rposition(|&scan_code| key.scan_code() == scan_code)
         {
-            if kb_event.down() {
-                active_layers.push(layer);
-            } else {
-                // Remove from active layers
-                active_layers
-                    .iter()
-                    .rposition(|&l| l == layer)
-                    .map(|pos| active_layers.remove(pos));
+            if key.up() {
+                layer_modifiers.remove(pos);
             }
+            // Also ignore repeated down events.
             return Remap::Ignore;
         }
 
-        let remapped_char = active_layers
-            .last()
-            .map(|&x| x)
-            .unwrap_or(&base_layer)
-            .get(&kb_event.scan_code());
+        // Check if we need to activate a layer.
+        if key.down()
+            && layers
+                .iter()
+                .any(|(&modifiers, _)| modifiers.contains(&key.scan_code()))
+        {
+            // Activate layer by pushing the modifier onto a stack.
+            layer_modifiers.push(key.scan_code());
+            return Remap::Ignore;
+        }
 
+        // Select the layer the user activated most recently.
+        let active_layer = if let Some(lmod) = layer_modifiers.last() {
+            &layers
+                .iter()
+                .find(|(modifiers, _)| modifiers.contains(lmod))
+                .unwrap()
+                .1
+        } else {
+            &base_layer
+        };
+
+        let remapped_char = active_layer.get(&key.scan_code());
         match remapped_char {
             Some(&c) => Remap::Character(c),
             None => Remap::Transparent,
