@@ -179,13 +179,14 @@ fn send_char(kb_event: &KeyboardEvent, c: char) {
         // Convert to UTF-16
         let c16 = OsString::from(c.to_string()).encode_wide().next().unwrap();
 
-        // TODO: Improve layout handling
-        let vk_state = VkKeyScanExW(c16, GetKeyboardLayout(0));
+        let vk_state = VkKeyScanW(c16);
+        let dead_key = MapVirtualKeyW((vk_state & 0xFF) as u32, MAPVK_VK_TO_CHAR) & 0x80000000 != 0;
 
         // Send the character as unicode input if:
         // 1. There is no key for the character available on the current keyboard layout
-        // 2. A modifier (bits the upper byte) is required to type this character
-        if vk_state == -1 || vk_state & 0xF00 != 0 {
+        // 2. A modifier (bits the upper byte) is required to type this character with a key
+        // 3. The key for this character is a dead key (diacritic)
+        if vk_state == -1 || vk_state & 0xF00 != 0 || dead_key {
             println!("remapped to `{}` as unicode input", c);
             send_unicode(kb_event, c16);
         } else {
