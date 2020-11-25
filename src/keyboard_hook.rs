@@ -105,16 +105,22 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
         return -1;
     }
 
+    let kb_event = &*(l_param as *const KeyboardEvent);
+
     // If the user calls `SendInput()` in the callback the hook is retriggered immediatelly with
     // an injected key event. Even though the execution context still is in the same thread we
     // need to filter out injected events to prevent recursion.
-    let kb_event = &*(l_param as *const KeyboardEvent);
     if kb_event.is_injected() {
+        println!(
+            ", injected as (sc: {:#06X}, vk: {:#04X})",
+            kb_event.scan_code(),
+            kb_event.virtual_key()
+        );
         return CallNextHookEx(ptr::null_mut(), code, w_param, l_param);
     }
 
     print!(
-        "{} scan code: {:#06X}, virtual key: {:#04X}, ",
+        "{} (sc: {:#06X}, vk: {:#04X}) ",
         if kb_event.up() { '↑' } else { '↓' },
         kb_event.scan_code(),
         kb_event.virtual_key(),
@@ -187,10 +193,10 @@ fn send_char(kb_event: &KeyboardEvent, c: char) {
         // 2. A modifier (bits the upper byte) is required to type this character with a key
         // 3. The key for this character is a dead key (diacritic)
         if vk_state == -1 || vk_state & 0xF00 != 0 || dead_key {
-            println!("remapped to `{}` as unicode input", c);
+            print!("remapped to `{}` as unicode input", c);
             send_unicode(kb_event, c16);
         } else {
-            println!("remapped to `{}` as virtual key", c);
+            print!("remapped to `{}` as virtual key", c);
             send_key(kb_event, vk_state as u8);
         }
     }
