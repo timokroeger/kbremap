@@ -11,7 +11,6 @@ use std::{
 
 use toml::Value;
 use trayicon::{Icon, MenuBuilder, TrayIconBuilder};
-use winapi::um::consoleapi::*;
 use winit::{
     event::Event,
     event_loop::{ControlFlow, EventLoop},
@@ -22,6 +21,11 @@ use keyboard_hook::{KeyboardHook, Remap};
 static BYPASS: AtomicBool = AtomicBool::new(false);
 
 fn main() {
+    // Display debug and panic output when launched from a terminal.
+    unsafe {
+        use winapi::um::wincon::*;
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    };
     let mut base_layer = HashMap::new();
     let mut layers = Vec::new();
     if let Ok(config_str) = fs::read_to_string("config.toml") {
@@ -107,7 +111,6 @@ fn main() {
     #[derive(Debug, Copy, Clone, Eq, PartialEq)]
     enum Events {
         ToggleEnabled,
-        DebugOutput,
         Exit,
     };
     let event_loop = EventLoop::<Events>::with_user_event();
@@ -121,11 +124,7 @@ fn main() {
         .sender_winit(event_loop_proxy)
         .icon_from_buffer(icon_enabled)
         .on_click(Events::ToggleEnabled)
-        .menu(
-            MenuBuilder::new()
-                .item("Show debug output", Events::DebugOutput)
-                .item("E&xit", Events::Exit),
-        )
+        .menu(MenuBuilder::new().item("E&xit", Events::Exit))
         .build()
         .unwrap();
 
@@ -147,10 +146,6 @@ fn main() {
                     tray_icon.set_icon(&icon_enabled).unwrap();
                 }
             }
-            Event::UserEvent(Events::DebugOutput) => unsafe {
-                AllocConsole();
-                // TODO: Do stop the process when closing the console.
-            },
             Event::UserEvent(Events::Exit) => *control_flow = ControlFlow::Exit,
             _ => {}
         }
