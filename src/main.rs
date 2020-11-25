@@ -1,62 +1,32 @@
 #![windows_subsystem = "windows"]
 
+mod config;
 mod keyboard_hook;
 
 use std::{
-    collections::HashMap,
-    convert::TryInto,
     fs,
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use toml::Value;
+use config::Config;
+use keyboard_hook::{KeyboardHook, Remap};
 use trayicon::{Icon, MenuBuilder, TrayIconBuilder};
 use winit::{
     event::Event,
     event_loop::{ControlFlow, EventLoop},
 };
 
-use keyboard_hook::{KeyboardHook, Remap};
-
 static BYPASS: AtomicBool = AtomicBool::new(false);
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     // Display debug and panic output when launched from a terminal.
     unsafe {
         use winapi::um::wincon::*;
         AttachConsole(ATTACH_PARENT_PROCESS);
     };
-    let mut base_layer = HashMap::new();
-    let mut layers = Vec::new();
-    if let Ok(config_str) = fs::read_to_string("config.toml") {
-        // TODO: Improve error reporting (there is no console to print the panic).
-        let config: Value = config_str.parse().unwrap();
-        for (_layer_name, layer) in config["layers"].as_table().unwrap() {
-            let mut map = HashMap::new();
-            for mapping in layer["map"].as_array().unwrap() {
-                let scan_code: u16 = mapping["scan_code"]
-                    .as_integer()
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
-                let characters = mapping["characters"].as_str().unwrap();
-                for (i, key) in characters.chars().enumerate() {
-                    map.insert(scan_code + i as u16, key);
-                }
-            }
 
-            if let Some(mods) = layer.get("modifiers").and_then(Value::as_array) {
-                layers.push((
-                    mods.iter()
-                        .map(|sc| sc.as_integer().unwrap() as u16)
-                        .collect::<Vec<u16>>(),
-                    map,
-                ));
-            } else {
-                base_layer.extend(map);
-            }
-        }
-    }
+    let config_str = fs::read_to_string("config.toml")?;
+    let config = Config::from_toml(&config_str)?;
 
     let mut layer_modifiers = Vec::new();
     let _kbhook = KeyboardHook::set(|key| {
@@ -77,25 +47,17 @@ fn main() {
         }
 
         // Check if we need to activate a layer.
-        if key.down()
-            && layers
-                .iter()
-                .any(|(modifiers, _)| modifiers.contains(&key.scan_code()))
-        {
+        if key.down() && config.is_layer_modifier(key.scan_code()) {
             // Activate layer by pushing the modifier onto a stack.
             layer_modifiers.push(key.scan_code());
             return Remap::Ignore;
         }
 
         // Select the layer the user activated most recently.
-        let active_layer = if let Some(lmod) = layer_modifiers.last() {
-            &layers
-                .iter()
-                .find(|(modifiers, _)| modifiers.contains(lmod))
-                .unwrap()
-                .1
+        let active_layer = if let Some(&lmod) = layer_modifiers.last() {
+            config.layer_map(lmod).unwrap()
         } else {
-            &base_layer
+            &config.base_layer_map()
         };
 
         let remapped_char = active_layer.get(&key.scan_code());
