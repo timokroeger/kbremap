@@ -1,72 +1,89 @@
 use std::collections::HashMap;
 
+use anyhow::{bail, ensure, Context, Result};
 use serde::Deserialize;
 
-type LayerMap = HashMap<u16, char>;
+use crate::KeyAction;
+use crate::{keyboard_hook::Remap, LayerMap};
 
+#[derive(Debug, Deserialize)]
 pub struct Config {
-    base_layer: LayerMap,
-    layers: Vec<(Vec<u16>, LayerMap)>,
+    layers: HashMap<String, Vec<MappingConfig>>,
+
+    #[serde(skip)]
+    result: HashMap<String, LayerMap>,
 }
 
 #[derive(Debug, Deserialize)]
-struct TopLevelConfig {
-    pub layers: HashMap<String, LayerConfig>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LayerConfig {
-    modifiers: Option<Vec<u16>>,
-    map: Vec<MapConfig>,
-}
-
-#[derive(Debug, Deserialize)]
-struct MapConfig {
+struct MappingConfig {
     scan_code: u16,
-    characters: String,
+    layer: Option<String>,
+    characters: Option<String>,
 }
 
 impl Config {
-    pub fn from_toml(config_str: &str) -> anyhow::Result<Config> {
-        let tlc: TopLevelConfig = toml::from_str(&config_str)?;
+    pub fn from_toml(config_str: &str) -> Result<HashMap<String, LayerMap>> {
+        let config: Config = toml::from_str(&config_str)?;
 
-        let mut config = Config {
-            base_layer: HashMap::new(),
-            layers: Vec::new(),
-        };
-        for (_layer_name, layer_config) in &tlc.layers {
-            let mut map = HashMap::new();
-            for map_config in &layer_config.map {
-                for (i, key) in map_config.characters.chars().enumerate() {
-                    map.insert(map_config.scan_code + i as u16, key);
-                }
-            }
-
-            if let Some(mods) = &layer_config.modifiers {
-                config.layers.push((mods.clone(), map));
-            } else {
-                anyhow::ensure!(
-                    config.base_layer.is_empty(),
-                    "Missing `modifiers` field. There can only be one base layer without modifiers",
-                );
-                config.base_layer.extend(map);
+        let result = parse_layer(&config, "base", HashMap::new())?;
+        for (layer_name, _) in &config.layers {
+            if !result.contains_key(layer_name) {
+                println!("Warning: Ignoring unreferenced layer `{}`", layer_name);
             }
         }
-        Ok(config)
+
+        Ok(result)
+    }
+}
+
+fn parse_layer(
+    config: &Config,
+    layer_name: &str,
+    mut result: HashMap<String, LayerMap>,
+) -> Result<HashMap<String, LayerMap>> {
+    // Check if layer was processed already.
+    if result.contains_key(layer_name) {
+        return Ok(result);
     }
 
-    pub fn is_layer_modifier(&self, scan_code: u16) -> bool {
-        self.layer_map(scan_code).is_some()
-    }
+    let layer_config = config
+        .layers
+        .get(layer_name)
+        .context("Invalid layer reference")?;
 
-    pub fn base_layer_map(&self) -> &LayerMap {
-        &self.base_layer
-    }
+    let mut map = HashMap::new();
+    for mapping in layer_config {
+        match (&mapping.layer, &mapping.characters) {
+            (Some(target_layer), None) => {
+                ensure!(
+                    config.layers.contains_key(target_layer),
+                    "Invalid layer reference `{}`",
+                    target_layer
+                );
+                map.insert(
+                    mapping.scan_code,
+                    KeyAction::Layer(Remap::Ignore, target_layer.clone()),
+                );
 
-    pub fn layer_map(&self, modifier_scan_code: u16) -> Option<&LayerMap> {
-        self.layers
-            .iter()
-            .find(|(modifiers, _)| modifiers.contains(&modifier_scan_code))
-            .map(|(_, map)| map)
+                result = parse_layer(config, target_layer, result)?;
+
+                // Also insert a layer action in the target layer to get back.
+                result.get_mut(target_layer).unwrap().insert(
+                    mapping.scan_code,
+                    KeyAction::Layer(Remap::Ignore, layer_name.to_string()),
+                );
+            }
+            (None, Some(characters)) => {
+                for (i, c) in characters.chars().enumerate() {
+                    map.insert(
+                        mapping.scan_code + i as u16,
+                        KeyAction::Remap(Remap::Character(c)),
+                    );
+                }
+            }
+            _ => bail!("Invalid config"), // TODO: Improve error handling
+        }
     }
+    result.insert(layer_name.to_string(), map);
+    Ok(result)
 }
