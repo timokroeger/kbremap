@@ -3,8 +3,10 @@ use std::collections::HashMap;
 use anyhow::{bail, ensure, Context, Result};
 use serde::Deserialize;
 
-use crate::KeyAction;
-use crate::{keyboard_hook::Remap, LayerMap};
+use crate::{
+    keyboard_hook::Remap,
+    layers::{KeyAction, LayerMap, Layers},
+};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -22,30 +24,27 @@ struct MappingConfig {
 }
 
 impl Config {
-    pub fn from_toml(config_str: &str) -> Result<HashMap<String, LayerMap>> {
+    pub fn from_toml(config_str: &str) -> Result<Layers> {
         let config: Config = toml::from_str(&config_str)?;
 
-        let result = parse_layer(&config, "base", HashMap::new())?;
+        let mut layers = Layers::new();
+
+        let base_layer_name = String::from("base");
+        let base_layer_map = parse_layer_map(&config, &base_layer_name, &mut layers)?;
+        layers.add_layer(base_layer_name, base_layer_map);
+
         for (layer_name, _) in &config.layers {
-            if !result.contains_key(layer_name) {
+            if !layers.has_layer(layer_name) {
                 println!("Warning: Ignoring unreferenced layer `{}`", layer_name);
             }
         }
 
-        Ok(result)
+        Ok(layers)
     }
 }
 
-fn parse_layer(
-    config: &Config,
-    layer_name: &str,
-    mut result: HashMap<String, LayerMap>,
-) -> Result<HashMap<String, LayerMap>> {
-    // Check if layer was processed already.
-    if result.contains_key(layer_name) {
-        return Ok(result);
-    }
-
+// Recursive function to parse all layers that can be reached by layer activation keys.
+fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Result<LayerMap> {
     let layer_config = config
         .layers
         .get(layer_name)
@@ -54,24 +53,23 @@ fn parse_layer(
     let mut map = HashMap::new();
     for mapping in layer_config {
         match (&mapping.layer, &mapping.characters) {
-            (Some(target_layer), None) => {
+            (Some(target_layer_name), None) => {
                 ensure!(
-                    config.layers.contains_key(target_layer),
+                    config.layers.contains_key(target_layer_name),
                     "Invalid layer reference `{}`",
-                    target_layer
+                    target_layer_name
                 );
+
                 map.insert(
                     mapping.scan_code,
-                    KeyAction::Layer(Remap::Ignore, target_layer.clone()),
+                    KeyAction::Layer(Remap::Ignore, target_layer_name.clone()),
                 );
 
-                result = parse_layer(config, target_layer, result)?;
-
-                // Also insert a layer action in the target layer to get back.
-                result.get_mut(target_layer).unwrap().insert(
-                    mapping.scan_code,
-                    KeyAction::Layer(Remap::Ignore, layer_name.to_string()),
-                );
+                // Build the target layer map if not available already.
+                if !layers.has_layer(target_layer_name) {
+                    let target_layer_map = parse_layer_map(config, target_layer_name, layers)?;
+                    layers.add_layer(target_layer_name.clone(), target_layer_map);
+                }
             }
             (None, Some(characters)) => {
                 for (i, c) in characters.chars().enumerate() {
@@ -84,6 +82,6 @@ fn parse_layer(
             _ => bail!("Invalid config"), // TODO: Improve error handling
         }
     }
-    result.insert(layer_name.to_string(), map);
-    Ok(result)
+
+    Ok(map)
 }

@@ -2,13 +2,14 @@
 
 mod config;
 mod keyboard_hook;
+mod layers;
 
 use std::{
-    collections::HashMap,
     fs,
     sync::atomic::{AtomicBool, Ordering},
 };
 
+use anyhow::Result;
 use config::Config;
 use keyboard_hook::{KeyboardHook, Remap};
 use trayicon::{Icon, MenuBuilder, TrayIconBuilder};
@@ -19,15 +20,7 @@ use winit::{
 
 static BYPASS: AtomicBool = AtomicBool::new(false);
 
-#[derive(Debug)]
-pub enum KeyAction {
-    Remap(Remap),
-    Layer(Remap, String),
-}
-
-pub type LayerMap = HashMap<u16, KeyAction>;
-
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
     unsafe {
         use winapi::um::wincon::*;
@@ -35,23 +28,16 @@ fn main() -> anyhow::Result<()> {
     };
 
     let config_str = fs::read_to_string("config.toml")?;
-    let layers = Config::from_toml(&config_str)?;
+    let mut layers = Config::from_toml(&config_str)?;
+    layers.build_activation_sequences("base");
 
-    let mut active_layer = &String::from("base");
     let _kbhook = KeyboardHook::set(|key| {
         if BYPASS.load(Ordering::SeqCst) {
             return Remap::Transparent;
         }
 
-        let remapped_char = layers[active_layer].get(&key.scan_code());
-        match remapped_char {
-            Some(KeyAction::Remap(r)) => *r,
-            Some(KeyAction::Layer(r, layer)) => {
-                active_layer = layer;
-                *r
-            }
-            None => Remap::Transparent,
-        }
+        layers.process_modifiers(key);
+        layers.get_remapping(key.scan_code())
     });
 
     // UI code.
