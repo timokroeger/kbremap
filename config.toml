@@ -1,13 +1,24 @@
 [layers]
 base = [
-    { scan_code = 0x10, characters = "bu.,üpclmfx´" },
+    { scan_code = 0x02, characters = "1234567890-" },
+    { scan_code = 0x10, characters = "bu.,üpclmfx" },
     { scan_code = 0x1E, characters = "hieaodtrnsß" },
     { scan_code = 0x2C, characters = "kyöäqjgwvz" },
+    { scan_code = 0x2A, layer = "shift", forward_scan_code = true }, # left shift
+    { scan_code = 0xE036, layer = "shift", forward_scan_code = true }, # right shift
     { scan_code = 0x3A, layer = "symbols" }, # caps lock
     { scan_code = 0x2B, layer = "symbols" }, # '\' on US layout, `#` key on german layout
 ]
 
+shift = [
+    { scan_code = 0x02, characters = "°§ℓ»«$€„“”—" },
+    { scan_code = 0x10, characters = "BU:;ÜPCLMFX" },
+    { scan_code = 0x1E, characters = "HIEAODTRNS" },
+    { scan_code = 0x2C, characters = "KYÖÄQJGWVZ" },
+]
+
 symbols = [
+    { scan_code = 0x02, characters = "¹²³›‹¢¥‚‘’—" },
     { scan_code = 0x10, characters = "…_[]^!<>=&" },
     { scan_code = 0x1E, characters = "\\/{}*?()-:@" },
     { scan_code = 0x2C, characters = "#$|~`+%\"';" },

@@ -80,10 +80,12 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
             }
             (None, Some(characters)) => {
                 for (i, c) in characters.chars().enumerate() {
-                    map.insert(
-                        mapping.scan_code + i as u16,
-                        KeyAction::Remap(Remap::Character(c)),
-                    );
+                    let remap = if c == '\0' {
+                        Remap::Ignore
+                    } else {
+                        Remap::Character(c)
+                    };
+                    map.insert(mapping.scan_code + i as u16, KeyAction::Remap(remap));
                 }
             }
             _ => bail!("Invalid config"), // TODO: Improve error handling
