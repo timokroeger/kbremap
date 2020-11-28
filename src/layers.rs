@@ -32,8 +32,11 @@ pub struct Layers {
     /// Keys used for layer switching.
     modifiers: HashMap<u16, Remap>,
 
-    /// Currently active modifiers.
-    active_modifiers: Vec<u16>,
+    /// Currently pressed layer modifiers keys.
+    pressed_modifiers: Vec<u16>,
+
+    /// Currently pressed keys.
+    pressed_keys: HashMap<u16, Remap>,
 }
 
 impl Layers {
@@ -42,7 +45,8 @@ impl Layers {
             layers: Vec::new(),
             base_layer_idx: 0,
             modifiers: HashMap::new(),
-            active_modifiers: Vec::new(),
+            pressed_modifiers: Vec::new(),
+            pressed_keys: HashMap::new(),
         }
     }
 
@@ -116,12 +120,12 @@ impl Layers {
     /// of pressed modifer keys matches the layer's activation sequence. This
     /// is true even when modifier keys are removed from the set randomly.
     fn active_layer(&self) -> Option<&Layer> {
-        if self.active_modifiers.is_empty() {
+        if self.pressed_modifiers.is_empty() {
             return self.layers.get(self.base_layer_idx);
         }
 
         for layer in &self.layers {
-            if layer.activation_sequences.contains(&self.active_modifiers) {
+            if layer.activation_sequences.contains(&self.pressed_modifiers) {
                 return Some(layer);
             }
         }
@@ -132,15 +136,15 @@ impl Layers {
     /// Processes modifers to update select the correct layer.
     fn process_modifiers(&mut self, scan_code: u16, up: bool) {
         let active_idx = self
-            .active_modifiers
+            .pressed_modifiers
             .iter()
-            .rposition(|&active_sc| active_sc == scan_code);
+            .rposition(|&pressed_scan_code| pressed_scan_code == scan_code);
         match (active_idx, up) {
             (None, false) => {
-                self.active_modifiers.push(scan_code);
+                self.pressed_modifiers.push(scan_code);
             }
             (Some(idx), true) => {
-                self.active_modifiers.remove(idx);
+                self.pressed_modifiers.remove(idx);
             }
             _ => {} // Ignore repeated key presses
         }
@@ -152,14 +156,27 @@ impl Layers {
             return remap;
         }
 
-        match self.active_layer() {
+        if let Some(&remap) = self.pressed_keys.get(&scan_code) {
+            if up {
+                self.pressed_keys.remove(&scan_code);
+            }
+            return remap;
+        }
+
+        let remap = match self.active_layer() {
             Some(layer) => match layer.map.get(&scan_code) {
                 Some(KeyAction::Remap(r)) => *r,
                 Some(KeyAction::Layer(_, _)) => unreachable!(), // Handled above
                 None => Remap::Transparent,
             },
             None => Remap::Ignore,
+        };
+
+        if !up {
+            self.pressed_keys.insert(scan_code, remap);
         }
+
+        remap
     }
 }
 
@@ -209,14 +226,6 @@ mod tests {
         assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
         assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
 
-        // TODO: Fix
-        // assert_eq!(layers.get_remapping(0x11, false), Remap::Ignore);
-        // assert_eq!(layers.get_remapping(0x20, false), Remap::Character('1'));
-        // assert_eq!(layers.get_remapping(0x11, true), Remap::Ignore);
-        // assert_eq!(layers.get_remapping(0x20, true), Remap::Character('1'));
-        // assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
-        // assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
-
         // L2
         assert_eq!(layers.get_remapping(0x12, false), Remap::Ignore);
         assert_eq!(layers.get_remapping(0x20, false), Remap::Character('2'));
@@ -250,6 +259,14 @@ mod tests {
         assert_eq!(layers.get_remapping(0x20, false), Remap::Character('1'));
         assert_eq!(layers.get_remapping(0x20, true), Remap::Character('1'));
         assert_eq!(layers.get_remapping(0x11, true), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
+
+        // Change layer during key press
+        assert_eq!(layers.get_remapping(0x11, false), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('1'));
+        assert_eq!(layers.get_remapping(0x11, true), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('1'));
         assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
         assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
     }
