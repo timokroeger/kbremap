@@ -186,11 +186,6 @@ mod tests {
 
     #[test]
     fn layer_activation() {
-        unsafe {
-            use winapi::um::wincon::*;
-            AttachConsole(ATTACH_PARENT_PROCESS);
-        };
-
         let mut layers = Layers::new();
 
         let mut l0 = HashMap::new();
