@@ -21,6 +21,7 @@ struct MappingConfig {
     scan_code: u16,
     layer: Option<String>,
     characters: Option<String>,
+    forward_scan_code: Option<bool>,
 }
 
 impl Config {
@@ -60,9 +61,15 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
                     target_layer_name
                 );
 
+                let remap = if mapping.forward_scan_code == Some(true) {
+                    Remap::Transparent
+                } else {
+                    Remap::Ignore
+                };
+
                 map.insert(
                     mapping.scan_code,
-                    KeyAction::Layer(Remap::Ignore, target_layer_name.clone()),
+                    KeyAction::Layer(remap, target_layer_name.clone()),
                 );
 
                 // Build the target layer map if not available already.
