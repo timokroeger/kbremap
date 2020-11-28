@@ -36,8 +36,7 @@ fn main() -> Result<()> {
             return Remap::Transparent;
         }
 
-        layers.process_modifiers(key);
-        layers.get_remapping(key.scan_code())
+        layers.get_remapping(key.scan_code(), key.up())
     });
 
     // UI code.

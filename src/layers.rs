@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::keyboard_hook::{KeyboardEvent, Remap};
+use crate::keyboard_hook::Remap;
 
 #[derive(Debug)]
 pub enum KeyAction {
@@ -26,6 +26,9 @@ struct Layer {
 pub struct Layers {
     layers: Vec<Layer>,
 
+    /// Index to the base layer (layer without modifiers)
+    base_layer_idx: usize,
+
     /// Keys used for layer switching.
     modifiers: HashMap<u16, Remap>,
 
@@ -37,6 +40,7 @@ impl Layers {
     pub fn new() -> Layers {
         Layers {
             layers: Vec::new(),
+            base_layer_idx: 0,
             modifiers: HashMap::new(),
             active_modifiers: Vec::new(),
         }
@@ -96,6 +100,14 @@ impl Layers {
             let target_layer_name = target_layer.name.clone();
             self.build_activation_sequences(&target_layer_name);
         }
+
+        if activation_sequences.is_empty() {
+            self.base_layer_idx = self
+                .layers
+                .iter()
+                .position(|l| l.name == layer_name)
+                .unwrap();
+        }
     }
 
     /// Returns the currently active layer or `None` when no layer is active.
@@ -105,40 +117,39 @@ impl Layers {
     /// is true even when modifier keys are removed from the set randomly.
     fn active_layer(&self) -> Option<&Layer> {
         if self.active_modifiers.is_empty() {
-            return Some(self.get_layer("base").unwrap());
+            return self.layers.get(self.base_layer_idx);
         }
+
         for layer in &self.layers {
             if layer.activation_sequences.contains(&self.active_modifiers) {
                 return Some(layer);
             }
         }
+
         None
     }
 
     /// Processes modifers to update select the correct layer.
-    pub fn process_modifiers(&mut self, key: &KeyboardEvent) {
-        if self.modifiers.get(&key.scan_code()).is_none() {
-            return;
-        }
-
+    fn process_modifiers(&mut self, scan_code: u16, up: bool) {
         let active_idx = self
             .active_modifiers
             .iter()
-            .rposition(|&scan_code| key.scan_code() == scan_code);
-        match active_idx {
-            None if key.down() => {
-                self.active_modifiers.push(key.scan_code());
+            .rposition(|&active_sc| active_sc == scan_code);
+        match (active_idx, up) {
+            (None, false) => {
+                self.active_modifiers.push(scan_code);
             }
-            Some(idx) if key.up() => {
+            (Some(idx), true) => {
                 self.active_modifiers.remove(idx);
             }
             _ => {} // Ignore repeated key presses
         }
     }
 
-    pub fn get_remapping(&self, scan_code: u16) -> Remap {
-        if let Some(remap) = self.modifiers.get(&scan_code) {
-            return *remap;
+    pub fn get_remapping(&mut self, scan_code: u16, up: bool) -> Remap {
+        if let Some(&remap) = self.modifiers.get(&scan_code) {
+            self.process_modifiers(scan_code, up);
+            return remap;
         }
 
         match self.active_layer() {
@@ -149,5 +160,97 @@ impl Layers {
             },
             None => Remap::Ignore,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn layer_activation() {
+        unsafe {
+            use winapi::um::wincon::*;
+            AttachConsole(ATTACH_PARENT_PROCESS);
+        };
+
+        let mut layers = Layers::new();
+
+        let mut l0 = HashMap::new();
+        l0.insert(0x11, KeyAction::Layer(Remap::Ignore, String::from("l1")));
+        l0.insert(0x12, KeyAction::Layer(Remap::Ignore, String::from("l2")));
+        l0.insert(0x20, KeyAction::Remap(Remap::Character('0')));
+        layers.add_layer(String::from("l0"), l0);
+
+        let mut l1 = HashMap::new();
+        l1.insert(0x12, KeyAction::Layer(Remap::Ignore, String::from("l3")));
+        l1.insert(0x20, KeyAction::Remap(Remap::Character('1')));
+        layers.add_layer(String::from("l1"), l1);
+
+        let mut l2 = HashMap::new();
+        l2.insert(0x20, KeyAction::Remap(Remap::Character('2')));
+        layers.add_layer(String::from("l2"), l2);
+
+        let mut l3 = HashMap::new();
+        l3.insert(0x20, KeyAction::Remap(Remap::Character('3')));
+        layers.add_layer(String::from("l3"), l3);
+
+        layers.build_activation_sequences("l0");
+
+        // L0
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
+
+        // L1
+        assert_eq!(layers.get_remapping(0x11, false), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('1'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('1'));
+        assert_eq!(layers.get_remapping(0x11, true), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
+
+        // TODO: Fix
+        // assert_eq!(layers.get_remapping(0x11, false), Remap::Ignore);
+        // assert_eq!(layers.get_remapping(0x20, false), Remap::Character('1'));
+        // assert_eq!(layers.get_remapping(0x11, true), Remap::Ignore);
+        // assert_eq!(layers.get_remapping(0x20, true), Remap::Character('1'));
+        // assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
+        // assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
+
+        // L2
+        assert_eq!(layers.get_remapping(0x12, false), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('2'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('2'));
+        assert_eq!(layers.get_remapping(0x12, true), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
+
+        // L1 -> L3 -> L2
+        assert_eq!(layers.get_remapping(0x11, false), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('1'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('1'));
+        assert_eq!(layers.get_remapping(0x12, false), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('3'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('3'));
+        assert_eq!(layers.get_remapping(0x11, true), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('2'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('2'));
+        assert_eq!(layers.get_remapping(0x12, true), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
+
+        // L2 -> XX -> L1
+        assert_eq!(layers.get_remapping(0x12, false), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('2'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('2'));
+        assert_eq!(layers.get_remapping(0x11, false), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x12, true), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('1'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('1'));
+        assert_eq!(layers.get_remapping(0x11, true), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
+        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
     }
 }
