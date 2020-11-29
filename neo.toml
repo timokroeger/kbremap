@@ -62,7 +62,7 @@ l5 = [
     { scan_code = 0x10, characters = "ξ\u0000λχωκψγφς᾿" },
     { scan_code = 0x1E, characters = "\u0000ιαεοσνρτδυ" },
     { scan_code = 0x2C, characters = "\u0000ϵηπζβμϱϑθ" },
-    { scan_code = 0x39, characters = "\u202F" }, # no-break space
+    { scan_code = 0x39, characters = "\u00A0" }, # no-break space
 ]
 
 l6 = [
@@ -71,4 +71,5 @@ l6 = [
     { scan_code = 0x10, characters = "Ξ√ΛℂΩ⨯ΨΓΦℚ∘˘" },
     { scan_code = 0x1E, characters = "⊂∫∀∃∈Σℕℝ∂Δ∇" },
     { scan_code = 0x2C, characters = "∪∩ℵΠℤ⇐⇔⇒↦Θ" },
+    { scan_code = 0x39, characters = "\u202F" }, # narrow no-break space
 ]
