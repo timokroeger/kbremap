@@ -75,7 +75,16 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
                     map.add_key(mapping.scan_code + i as u16, remap);
                 }
             }
-            MappingTarget::VirtualKeys { virtual_keys } => unimplemented!(),
+            MappingTarget::VirtualKeys { virtual_keys } => {
+                for (i, &vk) in virtual_keys.iter().enumerate() {
+                    let remap = if vk == 0 {
+                        Remap::Ignore
+                    } else {
+                        Remap::VirtualKey(vk)
+                    };
+                    map.add_key(mapping.scan_code + i as u16, remap);
+                }
+            }
             MappingTarget::Layer { layer, virtual_key } => {
                 let target_layer_name = layer;
 
@@ -85,7 +94,13 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
                     target_layer_name
                 );
 
-                map.add_layer_modifier(mapping.scan_code, Remap::Ignore, target_layer_name);
+                let remap = if let Some(vk) = virtual_key {
+                    Remap::VirtualKey(*vk)
+                } else {
+                    Remap::Ignore
+                };
+
+                map.add_layer_modifier(mapping.scan_code, remap, target_layer_name);
 
                 // Build the target layer map if not available already.
                 if !layers.has_layer(target_layer_name) {

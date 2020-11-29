@@ -98,6 +98,7 @@ pub enum Remap {
     Transparent,
     Ignore,
     Character(char),
+    VirtualKey(u8),
 }
 
 unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
@@ -131,17 +132,21 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
     match remap {
         Remap::Transparent => {
             println!("forwarded");
-            CallNextHookEx(ptr::null_mut(), code, w_param, l_param)
+            return CallNextHookEx(ptr::null_mut(), code, w_param, l_param);
         }
         Remap::Ignore => {
             println!("ignored");
-            -1
         }
         Remap::Character(c) => {
             send_char(kb_event, c);
-            -1
+        }
+        Remap::VirtualKey(vk) => {
+            print!("remapped to virtual key `{:#04X}", vk);
+            send_key(kb_event, vk);
         }
     }
+
+    -1
 }
 
 fn send_unicode(kb_event: &KeyboardEvent, c: u16) {
