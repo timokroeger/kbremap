@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use serde::Deserialize;
 
 use crate::{
@@ -10,15 +10,29 @@ use crate::{
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    layers: HashMap<String, Vec<MappingConfig>>,
+    layers: HashMap<String, Vec<Mapping>>,
 }
 
 #[derive(Debug, Deserialize)]
-struct MappingConfig {
+struct Mapping {
     scan_code: u16,
-    layer: Option<String>,
-    characters: Option<String>,
-    forward_scan_code: Option<bool>,
+    #[serde(flatten)]
+    target: MappingTarget,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum MappingTarget {
+    Characters {
+        characters: String,
+    },
+    VirtualKeys {
+        virtual_keys: Vec<u8>,
+    },
+    Layer {
+        layer: String,
+        virtual_key: Option<u8>,
+    },
 }
 
 impl Config {
@@ -50,29 +64,8 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
 
     let mut map = LayerMap::new();
     for mapping in layer_config {
-        match (&mapping.layer, &mapping.characters) {
-            (Some(target_layer_name), None) => {
-                ensure!(
-                    config.layers.contains_key(target_layer_name),
-                    "Invalid layer reference `{}`",
-                    target_layer_name
-                );
-
-                let remap = if mapping.forward_scan_code == Some(true) {
-                    Remap::Transparent
-                } else {
-                    Remap::Ignore
-                };
-
-                map.add_layer_modifier(mapping.scan_code, remap, target_layer_name);
-
-                // Build the target layer map if not available already.
-                if !layers.has_layer(target_layer_name) {
-                    let target_layer_map = parse_layer_map(config, target_layer_name, layers)?;
-                    layers.add_layer(target_layer_name.clone(), target_layer_map);
-                }
-            }
-            (None, Some(characters)) => {
+        match &mapping.target {
+            MappingTarget::Characters { characters } => {
                 for (i, c) in characters.chars().enumerate() {
                     let remap = if c == '\0' {
                         Remap::Ignore
@@ -82,7 +75,24 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
                     map.add_key(mapping.scan_code + i as u16, remap);
                 }
             }
-            _ => bail!("Invalid config"), // TODO: Improve error handling
+            MappingTarget::VirtualKeys { virtual_keys } => unimplemented!(),
+            MappingTarget::Layer { layer, virtual_key } => {
+                let target_layer_name = layer;
+
+                ensure!(
+                    config.layers.contains_key(target_layer_name),
+                    "Invalid layer reference `{}`",
+                    target_layer_name
+                );
+
+                map.add_layer_modifier(mapping.scan_code, Remap::Ignore, target_layer_name);
+
+                // Build the target layer map if not available already.
+                if !layers.has_layer(target_layer_name) {
+                    let target_layer_map = parse_layer_map(config, target_layer_name, layers)?;
+                    layers.add_layer(target_layer_name.clone(), target_layer_map);
+                }
+            }
         }
     }
 
