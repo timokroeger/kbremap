@@ -5,15 +5,12 @@ use serde::Deserialize;
 
 use crate::{
     keyboard_hook::Remap,
-    layers::{KeyAction, LayerMap, Layers},
+    layers::{LayerMap, Layers},
 };
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
     layers: HashMap<String, Vec<MappingConfig>>,
-
-    #[serde(skip)]
-    result: HashMap<String, LayerMap>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,7 +48,7 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
         .get(layer_name)
         .context("Invalid layer reference")?;
 
-    let mut map = HashMap::new();
+    let mut map = LayerMap::new();
     for mapping in layer_config {
         match (&mapping.layer, &mapping.characters) {
             (Some(target_layer_name), None) => {
@@ -67,10 +64,7 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
                     Remap::Ignore
                 };
 
-                map.insert(
-                    mapping.scan_code,
-                    KeyAction::Layer(remap, target_layer_name.clone()),
-                );
+                map.add_layer_modifier(mapping.scan_code, remap, target_layer_name);
 
                 // Build the target layer map if not available already.
                 if !layers.has_layer(target_layer_name) {
@@ -85,7 +79,7 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
                     } else {
                         Remap::Character(c)
                     };
-                    map.insert(mapping.scan_code + i as u16, KeyAction::Remap(remap));
+                    map.add_key(mapping.scan_code + i as u16, remap);
                 }
             }
             _ => bail!("Invalid config"), // TODO: Improve error handling
