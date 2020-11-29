@@ -188,11 +188,30 @@ fn send_char(kb_event: &KeyboardEvent, c: char) {
         let vk_state = VkKeyScanW(c16);
         let dead_key = MapVirtualKeyW((vk_state & 0xFF) as u32, MAPVK_VK_TO_CHAR) & 0x80000000 != 0;
 
+        // Check if the modifer keys, which are required to type the character, are pressed.
+        let mut modifiers_matching = true;
+        let modifier_pressed = |vk| (GetAsyncKeyState(vk) as u16) & 0x8000 != 0;
+
+        let shift = vk_state & 0x100 != 0;
+        if shift {
+            modifiers_matching = modifier_pressed(VK_SHIFT);
+        }
+
+        let ctrl = vk_state & 0x200 != 0;
+        if ctrl {
+            modifiers_matching = modifier_pressed(VK_CONTROL);
+        }
+
+        let alt = vk_state & 0x400 != 0;
+        if alt {
+            modifiers_matching = modifier_pressed(VK_MENU);
+        }
+
         // Send the character as unicode input if:
         // 1. There is no key for the character available on the current keyboard layout
-        // 2. A modifier (bits the upper byte) is required to type this character with a key
+        // 2. Cannot be pressed with the currently active modifiers
         // 3. The key for this character is a dead key (diacritic)
-        if vk_state == -1 || vk_state & 0xF00 != 0 || dead_key {
+        if vk_state == -1 || !modifiers_matching || dead_key {
             print!("remapped to `{}` as unicode input", c);
             send_unicode(kb_event, c16);
         } else {
