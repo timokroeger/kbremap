@@ -1,8 +1,10 @@
 [layers]
 base = [
-    { scan_code = 0x29, characters = "ˆ" },
-    { scan_code = 0x02, characters = "1234567890-`" },
-    { scan_code = 0x10, characters = "xvlcwkhgfqß´" },
+    { scan_code = 0x29, characters = "\u02C6" }, # Modifier Letter Circumflex Accent
+    { scan_code = 0x0D, characters = "\u02CB" }, # Modifier Letter Grave Accent
+    { scan_code = 0x1B, characters = "\u02CA" }, # Modifier Letter Acute Accent
+    { scan_code = 0x02, characters = "1234567890-" },
+    { scan_code = 0x10, characters = "xvlcwkhgfqß" },
     { scan_code = 0x1E, characters = "uiaeosnrtdy" },
     { scan_code = 0x2C, characters = "üöäpzbm,.j" },
     { scan_code = 0x2A, layer = "shift", forward_scan_code = true }, # left shift
@@ -15,9 +17,11 @@ base = [
 ]
 
 shift = [
-    { scan_code = 0x29, characters = "ˇ" },
-    { scan_code = 0x02, characters = "°§ℓ»«$€„“”—¸" },
-    { scan_code = 0x10, characters = "XVLCWKHGFQẞ˜" },
+    { scan_code = 0x29, characters = "\u02C7" }, # Caron
+    { scan_code = 0x0D, characters = "\u0327" }, # Combining Cedilla
+    { scan_code = 0x1B, characters = "\u0303" }, # Combining Tilde
+    { scan_code = 0x02, characters = "°§ℓ»«$€„“”—" },
+    { scan_code = 0x10, characters = "XVLCWKHGFQẞ" },
     { scan_code = 0x1E, characters = "UIAEOSNRTDY" },
     { scan_code = 0x2C, characters = "ÜÖÄPZBM–•J" },
     { scan_code = 0x3A, layer = "l5" }, # caps lock
@@ -25,9 +29,8 @@ shift = [
 ]
 
 symbols = [
-    { scan_code = 0x29, characters = "↻" },
-    { scan_code = 0x02, characters = "¹²³›‹¢¥‚‘’—˚" },
-    { scan_code = 0x10, characters = "…_[]^!<>=&ſ/" },
+    { scan_code = 0x02, characters = "¹²³›‹¢¥‚‘’—" },
+    { scan_code = 0x10, characters = "…_[]^!<>=&ſ" },
     { scan_code = 0x1E, characters = "\\/{}*?()-:@" },
     { scan_code = 0x2C, characters = "#$|~`+%\"`;" },
     { scan_code = 0x2A, layer = "l5", forward_scan_code = true }, # left shift
@@ -38,6 +41,7 @@ symbols = [
 ]
 
 navigation_numpad = [
+    { scan_code = 0x29, characters = "\u02D9" }, # Dot Above
     { scan_code = 0x02, characters = "ªº№⋮·£¤0/*-" },
     { scan_code = 0x15, characters = "¿" },
     { scan_code = 0x23, characters = "¡" },
@@ -57,18 +61,16 @@ navigation_numpad = [
 ]
 
 l5 = [
-    { scan_code = 0x29, characters = "˞" },
-    { scan_code = 0x02, characters = "₁₂₃♂♀⚥ϰ⟨⟩₀-῾" },
-    { scan_code = 0x10, characters = "ξ\u0000λχωκψγφς᾿" },
+    { scan_code = 0x02, characters = "₁₂₃♂♀⚥ϰ⟨⟩₀-" },
+    { scan_code = 0x10, characters = "ξ\u0000λχωκψγφς" },
     { scan_code = 0x1E, characters = "\u0000ιαεοσνρτδυ" },
     { scan_code = 0x2C, characters = "\u0000ϵηπζβμϱϑθ" },
     { scan_code = 0x39, characters = "\u00A0" }, # no-break space
 ]
 
 l6 = [
-    { scan_code = 0x29, characters = "." },
-    { scan_code = 0x02, characters = "¬∨∧⊥∡∥→∞∝⌀╌¯" },
-    { scan_code = 0x10, characters = "Ξ√ΛℂΩ⨯ΨΓΦℚ∘˘" },
+    { scan_code = 0x02, characters = "¬∨∧⊥∡∥→∞∝⌀╌" },
+    { scan_code = 0x10, characters = "Ξ√ΛℂΩ⨯ΨΓΦℚ∘" },
     { scan_code = 0x1E, characters = "⊂∫∀∃∈Σℕℝ∂Δ∇" },
     { scan_code = 0x2C, characters = "∪∩ℵΠℤ⇐⇔⇒↦Θ" },
     { scan_code = 0x39, characters = "\u202F" }, # narrow no-break space
