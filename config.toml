@@ -1,3 +1,5 @@
+debug_output = true
+
 [layers]
 base = [
     { scan_code = 0x02, characters = "1234567890-" },

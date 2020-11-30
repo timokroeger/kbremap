@@ -10,6 +10,8 @@ use crate::{
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
+    #[serde(default)]
+    pub debug_output: bool,
     layers: HashMap<String, Vec<Mapping>>,
 }
 

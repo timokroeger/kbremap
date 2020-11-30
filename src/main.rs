@@ -32,6 +32,12 @@ fn main() -> Result<()> {
     let config_str = fs::read_to_string("config.toml")?;
     let config = Config::from_toml(&config_str)?;
 
+    // Spawn a console window if debug output was requested in the config and
+    // if the exetable was not launched from a terminal.
+    if config.debug_output {
+        unsafe { winapi::um::consoleapi::AllocConsole() };
+    }
+
     let mut layers = Layers::new();
     config.parse_layers("base", &mut layers)?;
     layers.build_activation_sequences("base");
