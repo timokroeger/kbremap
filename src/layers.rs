@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{bail, Result};
 
@@ -7,7 +7,7 @@ use crate::keyboard_hook::Remap;
 #[derive(Debug)]
 pub struct LayerMap {
     keys: HashMap<u16, Remap>,
-    layer_modifiers: HashMap<u16, String>,
+    layer_modifiers: HashMap<u16, String>, // TODO: Remove
 }
 
 impl LayerMap {
@@ -60,7 +60,7 @@ pub struct Layers {
     base_layer_idx: usize,
 
     /// Keys used for layer switching.
-    modifiers: HashMap<u16, Remap>,
+    modifiers: HashSet<u16>,
 
     /// Currently pressed layer modifiers keys.
     pressed_modifiers: Vec<u16>,
@@ -74,7 +74,7 @@ impl Layers {
         Layers {
             layers: Vec::new(),
             base_layer_idx: 0,
-            modifiers: HashMap::new(),
+            modifiers: HashSet::new(),
             pressed_modifiers: Vec::new(),
             pressed_keys: HashMap::new(),
         }
@@ -108,16 +108,10 @@ impl Layers {
     pub fn build_activation_sequences(&mut self, layer_name: &str) {
         let layer = self.get_layer(layer_name).unwrap();
 
-        let mut target_layers = Vec::new();
-        for (&scan_code, target_layer_name) in &layer.map.layer_modifiers {
-            let remap = layer.map.keys[&scan_code];
-            target_layers.push((target_layer_name.clone(), scan_code, remap));
-        }
-
         let activation_sequences = layer.activation_sequences.clone();
 
-        for (target_layer_name, scan_code, remap) in target_layers {
-            self.modifiers.insert(scan_code, remap);
+        for (&scan_code, target_layer_name) in &layer.map.layer_modifiers.clone() {
+            self.modifiers.insert(scan_code);
 
             let target_layer = self.get_layer_mut(&target_layer_name).unwrap();
 
@@ -180,9 +174,16 @@ impl Layers {
     }
 
     pub fn get_remapping(&mut self, scan_code: u16, up: bool) -> Remap {
-        if let Some(&remap) = self.modifiers.get(&scan_code) {
+        let remap = match self.active_layer() {
+            Some(layer) => match layer.map.keys.get(&scan_code) {
+                Some(r) => *r,
+                None => Remap::Transparent,
+            },
+            None => Remap::Ignore,
+        };
+
+        if self.modifiers.contains(&scan_code) {
             self.process_modifiers(scan_code, up);
-            return remap;
         }
 
         if let Some(&remap) = self.pressed_keys.get(&scan_code) {
@@ -191,14 +192,6 @@ impl Layers {
             }
             return remap;
         }
-
-        let remap = match self.active_layer() {
-            Some(layer) => match layer.map.keys.get(&scan_code) {
-                Some(r) => *r,
-                None => Remap::Transparent,
-            },
-            None => Remap::Ignore,
-        };
 
         if !up {
             self.pressed_keys.insert(scan_code, remap);
@@ -279,13 +272,13 @@ mod tests {
         assert_eq!(layers.get_remapping(0x12, false), Remap::Ignore);
         assert_eq!(layers.get_remapping(0x20, false), Remap::Character('2'));
         assert_eq!(layers.get_remapping(0x20, true), Remap::Character('2'));
-        assert_eq!(layers.get_remapping(0x11, false), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x11, false), Remap::Transparent);
         assert_eq!(layers.get_remapping(0x20, false), Remap::Ignore);
         assert_eq!(layers.get_remapping(0x20, true), Remap::Ignore);
         assert_eq!(layers.get_remapping(0x12, true), Remap::Ignore);
         assert_eq!(layers.get_remapping(0x20, false), Remap::Character('1'));
         assert_eq!(layers.get_remapping(0x20, true), Remap::Character('1'));
-        assert_eq!(layers.get_remapping(0x11, true), Remap::Ignore);
+        assert_eq!(layers.get_remapping(0x11, true), Remap::Transparent);
         assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
         assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
 
