@@ -190,8 +190,13 @@ fn send_char(kb_event: &KeyboardEvent, c: char) {
         // Convert to UTF-16
         let c16 = OsString::from(c.to_string()).encode_wide().next().unwrap();
 
-        let vk_state = VkKeyScanW(c16);
-        let dead_key = MapVirtualKeyW((vk_state & 0xFF) as u32, MAPVK_VK_TO_CHAR) & 0x80000000 != 0;
+        let layout = GetKeyboardLayout(GetWindowThreadProcessId(
+            GetForegroundWindow(),
+            ptr::null_mut(),
+        ));
+        let vk_state = VkKeyScanExW(c16, layout);
+        let dead_key =
+            MapVirtualKeyExW((vk_state & 0xFF) as u32, MAPVK_VK_TO_CHAR, layout) & 0x80000000 != 0;
 
         // Check if the modifer keys, which are required to type the character, are pressed.
         let mut modifiers_matching = true;
