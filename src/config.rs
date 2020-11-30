@@ -36,22 +36,25 @@ enum MappingTarget {
 }
 
 impl Config {
-    pub fn from_toml(config_str: &str) -> Result<Layers> {
-        let config: Config = toml::from_str(&config_str)?;
+    pub fn from_toml(config_str: &str) -> Result<Config> {
+        let config = toml::from_str(&config_str)?;
+        Ok(config)
+    }
 
-        let mut layers = Layers::new();
+    pub fn parse_layers(&self, layer_name: &str, layers: &mut Layers) -> Result<()> {
+        let base_layer_map = parse_layer_map(&self, &layer_name, layers)?;
+        layers.add_layer(layer_name, base_layer_map);
 
-        let base_layer_name = String::from("base");
-        let base_layer_map = parse_layer_map(&config, &base_layer_name, &mut layers)?;
-        layers.add_layer(base_layer_name, base_layer_map);
-
-        for (layer_name, _) in &config.layers {
-            if !layers.has_layer(layer_name) {
-                println!("Warning: Ignoring unreferenced layer `{}`", layer_name);
+        for (target_layer_name, _) in &self.layers {
+            if !layers.has_layer(target_layer_name) {
+                println!(
+                    "Warning: Ignoring unreferenced layer `{}`",
+                    target_layer_name
+                );
             }
         }
 
-        Ok(layers)
+        Ok(())
     }
 }
 
@@ -105,7 +108,7 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
                 // Build the target layer map if not available already.
                 if !layers.has_layer(target_layer_name) {
                     let target_layer_map = parse_layer_map(config, target_layer_name, layers)?;
-                    layers.add_layer(target_layer_name.clone(), target_layer_map);
+                    layers.add_layer(target_layer_name, target_layer_map);
                 }
             }
         }

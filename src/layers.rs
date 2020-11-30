@@ -68,9 +68,9 @@ impl Layers {
         }
     }
 
-    pub fn add_layer(&mut self, name: String, map: LayerMap) {
+    pub fn add_layer(&mut self, name: &str, map: LayerMap) {
         self.layers.push(Layer {
-            name,
+            name: name.to_string(),
             activation_sequences: Vec::new(),
             map,
         })
@@ -208,20 +208,20 @@ mod tests {
         l0.add_layer_modifier(0x11, Remap::Ignore, "l1");
         l0.add_layer_modifier(0x12, Remap::Ignore, "l2");
         l0.add_key(0x20, Remap::Character('0'));
-        layers.add_layer(String::from("l0"), l0);
+        layers.add_layer("l0", l0);
 
         let mut l1 = LayerMap::new();
         l1.add_layer_modifier(0x12, Remap::Ignore, "l3");
         l1.add_key(0x20, Remap::Character('1'));
-        layers.add_layer(String::from("l1"), l1);
+        layers.add_layer("l1", l1);
 
         let mut l2 = LayerMap::new();
         l2.add_key(0x20, Remap::Character('2'));
-        layers.add_layer(String::from("l2"), l2);
+        layers.add_layer("l2", l2);
 
         let mut l3 = LayerMap::new();
         l3.add_key(0x20, Remap::Character('3'));
-        layers.add_layer(String::from("l3"), l3);
+        layers.add_layer("l3", l3);
 
         layers.build_activation_sequences("l0");
 

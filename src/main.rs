@@ -13,6 +13,7 @@ use std::{
 use anyhow::Result;
 use config::Config;
 use keyboard_hook::{KeyboardHook, Remap};
+use layers::Layers;
 use trayicon::{Icon, MenuBuilder, TrayIconBuilder};
 use winit::{
     event::Event,
@@ -29,7 +30,10 @@ fn main() -> Result<()> {
     };
 
     let config_str = fs::read_to_string("config.toml")?;
-    let mut layers = Config::from_toml(&config_str)?;
+    let config = Config::from_toml(&config_str)?;
+
+    let mut layers = Layers::new();
+    config.parse_layers("base", &mut layers)?;
     layers.build_activation_sequences("base");
 
     let _kbhook = KeyboardHook::set(|key| {
