@@ -77,7 +77,7 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
                     } else {
                         Remap::Character(c)
                     };
-                    map.add_key(mapping.scan_code + i as u16, remap);
+                    map.add_key(mapping.scan_code + i as u16, remap)?;
                 }
             }
             MappingTarget::VirtualKeys { virtual_keys } => {
@@ -87,14 +87,15 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
                     } else {
                         Remap::VirtualKey(vk)
                     };
-                    map.add_key(mapping.scan_code + i as u16, remap);
+                    map.add_key(mapping.scan_code + i as u16, remap)?;
                 }
             }
             MappingTarget::Layer { layer, virtual_key } => {
                 let target_layer_name = layer;
 
                 ensure!(
-                    config.layers.contains_key(target_layer_name),
+                    config.layers.contains_key(target_layer_name)
+                        && target_layer_name != layer_name,
                     "Invalid layer reference `{}`",
                     target_layer_name
                 );
@@ -105,7 +106,7 @@ fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Re
                     Remap::Ignore
                 };
 
-                map.add_layer_modifier(mapping.scan_code, remap, target_layer_name);
+                map.add_layer_modifier(mapping.scan_code, remap, target_layer_name)?;
 
                 // Build the target layer map if not available already.
                 if !layers.has_layer(target_layer_name) {
