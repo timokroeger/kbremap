@@ -106,8 +106,6 @@ impl Layers {
             .flatten()
             .collect();
 
-        dbg!(&activation_sequences);
-
         let mut layers = Vec::new();
         for (layer_name, activation_sequences) in activation_sequences {
             layers.push(Layer {

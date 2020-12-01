@@ -61,11 +61,6 @@ impl KeyboardEvent {
         self.0.flags & LLKHF_UP != 0
     }
 
-    /// Key was pressed.
-    pub fn down(&self) -> bool {
-        !self.up()
-    }
-
     /// Scan code as defined by the keyboard.
     /// Extended keycodes have the three most significant bits set (0xExxx).
     pub fn scan_code(&self) -> u16 {
@@ -141,7 +136,7 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
             send_char(kb_event, c);
         }
         Remap::VirtualKey(vk) => {
-            print!("remapped to virtual key `{:#04X}", vk);
+            print!("remapped to virtual key {:#04X}", vk);
             send_key(kb_event, vk);
         }
     }
