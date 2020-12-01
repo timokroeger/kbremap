@@ -1,12 +1,8 @@
 use std::collections::HashMap;
 
-use anyhow::{ensure, Context, Result};
 use serde::Deserialize;
 
-use crate::{
-    keyboard_hook::Remap,
-    layers::{LayerMap, Layers},
-};
+use crate::keyboard_hook::Remap;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -38,84 +34,59 @@ enum MappingTarget {
 }
 
 impl Config {
-    pub fn from_toml(config_str: &str) -> Result<Config> {
+    pub fn from_toml(config_str: &str) -> Result<Config, toml::de::Error> {
         let config = toml::from_str(&config_str)?;
         Ok(config)
     }
 
-    pub fn parse_layers(&self, layer_name: &str, layers: &mut Layers) -> Result<()> {
-        let base_layer_map = parse_layer_map(&self, &layer_name, layers)?;
-        layers.add_layer(layer_name, base_layer_map);
-
-        for (target_layer_name, _) in &self.layers {
-            if !layers.has_layer(target_layer_name) {
-                println!(
-                    "Warning: Ignoring unreferenced layer `{}`",
-                    target_layer_name
-                );
-            }
-        }
-
-        Ok(())
+    pub fn layers(&self) -> impl Iterator<Item = &str> {
+        self.layers.keys().map(String::as_str)
     }
-}
 
-// Recursive function to parse all layers that can be reached by layer activation keys.
-fn parse_layer_map(config: &Config, layer_name: &str, layers: &mut Layers) -> Result<LayerMap> {
-    let layer_config = config
-        .layers
-        .get(layer_name)
-        .context("Invalid layer reference")?;
-
-    let mut map = LayerMap::new();
-    for mapping in layer_config {
-        match &mapping.target {
-            MappingTarget::Characters { characters } => {
-                for (i, c) in characters.chars().enumerate() {
-                    let remap = if c == '\0' {
-                        Remap::Ignore
-                    } else {
-                        Remap::Character(c)
-                    };
-                    map.add_key(mapping.scan_code + i as u16, remap)?;
+    pub fn layer_mappings(&self, layer_name: &str) -> HashMap<u16, Remap> {
+        let mut mappings = HashMap::new();
+        for mapping in &self.layers[layer_name] {
+            let mut insert_mapping = |scan_code, remap| {
+                if let Some(prev_remap) = mappings.insert(scan_code, remap) {
+                    println!(
+                        "Warning: `{:?}` overwritten by `{:?}` for scan_code={:#06X}",
+                        prev_remap, remap, mapping.scan_code
+                    );
                 }
-            }
-            MappingTarget::VirtualKeys { virtual_keys } => {
-                for (i, &vk) in virtual_keys.iter().enumerate() {
-                    let remap = if vk == 0 {
-                        Remap::Ignore
-                    } else {
-                        Remap::VirtualKey(vk)
-                    };
-                    map.add_key(mapping.scan_code + i as u16, remap)?;
+            };
+
+            match &mapping.target {
+                MappingTarget::Characters { characters } if !characters.is_empty() => {
+                    for (i, c) in characters.chars().enumerate() {
+                        insert_mapping(mapping.scan_code + i as u16, Remap::Character(c));
+                    }
                 }
-            }
-            MappingTarget::Layer { layer, virtual_key } => {
-                let target_layer_name = layer;
-
-                ensure!(
-                    config.layers.contains_key(target_layer_name)
-                        && target_layer_name != layer_name,
-                    "Invalid layer reference `{}`",
-                    target_layer_name
-                );
-
-                let remap = if let Some(vk) = virtual_key {
-                    Remap::VirtualKey(*vk)
-                } else {
-                    Remap::Ignore
-                };
-
-                map.add_layer_modifier(mapping.scan_code, remap, target_layer_name)?;
-
-                // Build the target layer map if not available already.
-                if !layers.has_layer(target_layer_name) {
-                    let target_layer_map = parse_layer_map(config, target_layer_name, layers)?;
-                    layers.add_layer(target_layer_name, target_layer_map);
+                MappingTarget::VirtualKeys { virtual_keys } if !virtual_keys.is_empty() => {
+                    for (i, vk) in virtual_keys.iter().enumerate() {
+                        insert_mapping(mapping.scan_code + i as u16, Remap::VirtualKey(*vk));
+                    }
+                }
+                MappingTarget::Layer {
+                    virtual_key: Some(vk),
+                    ..
+                } => {
+                    insert_mapping(mapping.scan_code, Remap::VirtualKey(*vk));
+                }
+                _ => {
+                    insert_mapping(mapping.scan_code, Remap::Ignore);
                 }
             }
         }
+        mappings
     }
 
-    Ok(map)
+    pub fn layer_modifiers(&self, layer_name: &str) -> impl Iterator<Item = (u16, &str)> {
+        self.layers[layer_name].iter().filter_map(|mapping| {
+            if let MappingTarget::Layer { layer, .. } = &mapping.target {
+                Some((mapping.scan_code, layer.as_str()))
+            } else {
+                None
+            }
+        })
+    }
 }

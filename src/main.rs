@@ -38,9 +38,7 @@ fn main() -> Result<()> {
         unsafe { winapi::um::consoleapi::AllocConsole() };
     }
 
-    let mut layers = Layers::new();
-    config.parse_layers("base", &mut layers)?;
-    layers.build_activation_sequences("base");
+    let mut layers = Layers::new(&config)?;
 
     let _kbhook = KeyboardHook::set(|key| {
         if BYPASS.load(Ordering::SeqCst) {

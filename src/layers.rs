@@ -1,50 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{bail, Result};
+use anyhow::{ensure, Context, Result};
 
-use crate::keyboard_hook::Remap;
-
-#[derive(Debug)]
-pub struct LayerMap {
-    keys: HashMap<u16, Remap>,
-    layer_modifiers: HashMap<u16, String>, // TODO: Remove
-}
-
-impl LayerMap {
-    pub fn new() -> LayerMap {
-        LayerMap {
-            keys: HashMap::new(),
-            layer_modifiers: HashMap::new(),
-        }
-    }
-
-    pub fn add_key(&mut self, scan_code: u16, remap: Remap) -> Result<()> {
-        if let Some(remap) = self.keys.get(&scan_code) {
-            bail!("Scan code {:#06X} already mapped to {:?}", scan_code, remap);
-        }
-        self.keys.insert(scan_code, remap);
-        Ok(())
-    }
-
-    pub fn add_layer_modifier(
-        &mut self,
-        scan_code: u16,
-        remap: Remap,
-        target_layer_name: &str,
-    ) -> Result<()> {
-        self.add_key(scan_code, remap)?;
-        self.layer_modifiers
-            .insert(scan_code, target_layer_name.to_string());
-        Ok(())
-    }
-}
+use crate::{config::Config, keyboard_hook::Remap};
 
 /// Mapping table for a virtual keyboard layer.
 #[derive(Debug)]
 struct Layer {
-    name: String,
-
-    map: LayerMap,
+    mappings: HashMap<u16, Remap>,
 
     /// Sequences of modifier keys that activate this layer.
     activation_sequences: Vec<Vec<u16>>,
@@ -56,9 +19,6 @@ struct Layer {
 pub struct Layers {
     layers: Vec<Layer>,
 
-    /// Index to the base layer (layer without modifiers)
-    base_layer_idx: usize,
-
     /// Keys used for layer switching.
     modifiers: HashSet<u16>,
 
@@ -69,72 +29,99 @@ pub struct Layers {
     pressed_keys: HashMap<u16, Remap>,
 }
 
+/// Looks for invalid references and cycles in the layer graph.
+fn check_layer_graph<'a, 'b>(
+    layer_name: &'a str,
+    layer_graph: &'b HashMap<&str, Vec<(u16, &'a str)>>,
+    visited: &'b mut HashSet<&'a str>,
+    finished: &'b mut HashSet<&'a str>,
+) -> Result<()> {
+    let layer = layer_graph
+        .get(layer_name)
+        .context(format!("Invalid layer reference {:?}", layer_name))?;
+    visited.insert(layer_name);
+    for (scan_code, target_layer) in layer {
+        ensure!(
+            !visited.contains(target_layer) || finished.contains(target_layer),
+            "Cycle in layer graph: scan_code={:#06X}, layer={:?}, target_layer={:?}",
+            scan_code,
+            layer_name,
+            target_layer
+        );
+
+        check_layer_graph(target_layer, layer_graph, visited, finished)?;
+    }
+    finished.insert(layer_name);
+    Ok(())
+}
+
+/// Traverses the graph starting at the base layer and stores path (scan code
+/// of each edge) to a layer as activation sequence for that layer.
+fn build_activation_sequences<'a, 'b>(
+    layer: &'a str,
+    layer_graph: &'b HashMap<&str, Vec<(u16, &'a str)>>,
+    activation_sequences: &'b mut HashMap<&'a str, Vec<Vec<u16>>>,
+) {
+    let our_seqs = activation_sequences[layer].clone();
+    for (scan_code, target_layer) in &layer_graph[layer] {
+        let target_seqs = activation_sequences.entry(target_layer).or_default();
+        for mut seq in our_seqs.iter().cloned() {
+            seq.push(*scan_code);
+            target_seqs.push(seq);
+        }
+
+        build_activation_sequences(target_layer, layer_graph, activation_sequences);
+    }
+}
+
 impl Layers {
-    pub fn new() -> Layers {
-        Layers {
-            layers: Vec::new(),
-            base_layer_idx: 0,
-            modifiers: HashSet::new(),
+    pub fn new(config: &Config) -> Result<Layers> {
+        // Virtual keyboard layer activation can be viewed as graph where layers
+        // are nodes and layer action keys are egdes.
+        let mut layer_graph: HashMap<&str, Vec<(u16, &str)>> = HashMap::new();
+        for layer_name in config.layers() {
+            layer_graph.insert(layer_name, config.layer_modifiers(layer_name).collect());
+        }
+
+        // TODO: Smart way to figure out the base layer.
+
+        // Layer graph validation
+        let mut visited = HashSet::new();
+        let mut finished = HashSet::new();
+        check_layer_graph("base", &layer_graph, &mut visited, &mut finished)?;
+        for layer_name in config.layers() {
+            if !finished.contains(layer_name) {
+                println!("Warning: Unused layer {:?}", layer_name);
+            }
+        }
+
+        let mut activation_sequences = HashMap::new();
+        activation_sequences.insert("base", vec![Vec::new()]);
+        build_activation_sequences("base", &layer_graph, &mut activation_sequences);
+
+        // Get a set of all modifiers.
+        let modifiers = activation_sequences
+            .iter()
+            .map(|(_, seqs)| seqs.iter().map(|seq| seq.iter()).flatten().copied())
+            .flatten()
+            .collect();
+
+        dbg!(&activation_sequences);
+
+        let mut layers = Vec::new();
+        for (layer_name, activation_sequences) in activation_sequences {
+            layers.push(Layer {
+                mappings: config.layer_mappings(layer_name),
+                activation_sequences,
+            });
+        }
+
+        Ok(Layers {
+            layers,
+            modifiers,
             pressed_modifiers: Vec::new(),
             pressed_keys: HashMap::new(),
-        }
-    }
-
-    pub fn add_layer(&mut self, name: &str, map: LayerMap) {
-        self.layers.push(Layer {
-            name: name.to_string(),
-            activation_sequences: Vec::new(),
-            map,
         })
-    }
-
-    fn get_layer(&self, name: &str) -> Option<&Layer> {
-        self.layers.iter().find(|l| l.name == name)
-    }
-
-    fn get_layer_mut(&mut self, name: &str) -> Option<&mut Layer> {
-        self.layers.iter_mut().find(|l| l.name == name)
-    }
-
-    pub fn has_layer(&self, name: &str) -> bool {
-        self.get_layer(name).is_some()
-    }
-
-    // TODO: Can this be improved especially in regard to cloning dropping?
-    /// Virtual keyboard layer activation can be viewed as graph where layers
-    /// are nodes and layer action keys are egdes. Traverses the graph starting
-    /// at the base layer and stores the path (set of edges) to each layer as
-    /// activation sequence.
-    pub fn build_activation_sequences(&mut self, layer_name: &str) {
-        let layer = self.get_layer(layer_name).unwrap();
-
-        let activation_sequences = layer.activation_sequences.clone();
-
-        for (&scan_code, target_layer_name) in &layer.map.layer_modifiers.clone() {
-            self.modifiers.insert(scan_code);
-
-            let target_layer = self.get_layer_mut(&target_layer_name).unwrap();
-
-            if activation_sequences.is_empty() {
-                target_layer.activation_sequences.push(vec![scan_code]);
-            } else {
-                for mut seq in activation_sequences.clone() {
-                    seq.push(scan_code);
-                    target_layer.activation_sequences.push(seq);
-                }
-            }
-
-            let target_layer_name = target_layer.name.clone();
-            self.build_activation_sequences(&target_layer_name);
-        }
-
-        if activation_sequences.is_empty() {
-            self.base_layer_idx = self
-                .layers
-                .iter()
-                .position(|l| l.name == layer_name)
-                .unwrap();
-        }
     }
 
     /// Returns the currently active layer or `None` when no layer is active.
@@ -143,10 +130,6 @@ impl Layers {
     /// of pressed modifer keys matches the layer's activation sequence. This
     /// is true even when modifier keys are removed from the set randomly.
     fn active_layer(&self) -> Option<&Layer> {
-        if self.pressed_modifiers.is_empty() {
-            return self.layers.get(self.base_layer_idx);
-        }
-
         for layer in &self.layers {
             if layer.activation_sequences.contains(&self.pressed_modifiers) {
                 return Some(layer);
@@ -175,7 +158,7 @@ impl Layers {
 
     pub fn get_remapping(&mut self, scan_code: u16, up: bool) -> Remap {
         let remap = match self.active_layer() {
-            Some(layer) => match layer.map.keys.get(&scan_code) {
+            Some(layer) => match layer.mappings.get(&scan_code) {
                 Some(r) => *r,
                 None => Remap::Transparent,
             },
@@ -207,32 +190,19 @@ mod tests {
 
     #[test]
     fn layer_activation() -> anyhow::Result<()> {
-        let mut layers = Layers::new();
+        let config_str = r#"[layers]
+        base = [
+            { scan_code = 0x11, layer = "l1" },
+            { scan_code = 0x12, layer = "l2" },
+            { scan_code = 0x20, characters = "0" },
+        ]
+        l1 = [{ scan_code = 0x12, layer = "l3" }, { scan_code = 0x20, characters = "1" }]
+        l2 = [{ scan_code = 0x20, characters = "2" }]
+        l3 = [{ scan_code = 0x20, characters = "3" }]
+        "#;
 
-        let mut l0 = LayerMap::new();
-        l0.add_layer_modifier(0x11, Remap::Ignore, "l1")?;
-        l0.add_layer_modifier(0x12, Remap::Ignore, "l2")?;
-        l0.add_key(0x20, Remap::Character('0'))?;
-        layers.add_layer("l0", l0);
-
-        let mut l1 = LayerMap::new();
-        l1.add_layer_modifier(0x12, Remap::Ignore, "l3")?;
-        l1.add_key(0x20, Remap::Character('1'))?;
-        layers.add_layer("l1", l1);
-
-        let mut l2 = LayerMap::new();
-        l2.add_key(0x20, Remap::Character('2'))?;
-        layers.add_layer("l2", l2);
-
-        let mut l3 = LayerMap::new();
-        l3.add_key(0x20, Remap::Character('3'))?;
-
-        // Adding an existing key should fail.
-        l3.add_key(0x20, Remap::Character('X')).unwrap_err();
-
-        layers.add_layer("l3", l3);
-
-        layers.build_activation_sequences("l0");
+        let config = Config::from_toml(config_str)?;
+        let mut layers = Layers::new(&config)?;
 
         // L0
         assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
