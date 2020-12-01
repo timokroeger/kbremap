@@ -1,12 +1,15 @@
 [layers]
 base = [
+    # Dead keys
     { scan_code = 0x29, characters = "\u02C6" }, # Modifier Letter Circumflex Accent
     { scan_code = 0x0D, characters = "\u02CB" }, # Modifier Letter Grave Accent
     { scan_code = 0x1B, characters = "\u02CA" }, # Modifier Letter Acute Accent
+    # Numbers and letters
     { scan_code = 0x02, characters = "1234567890-" },
     { scan_code = 0x10, characters = "xvlcwkhgfqß" },
     { scan_code = 0x1E, characters = "uiaeosnrtdy" },
     { scan_code = 0x2C, characters = "üöäpzbm,.j" },
+    # Layer modifiers
     { scan_code = 0x2A, layer = "shift", forward_scan_code = true }, # left shift
     { scan_code = 0xE036, layer = "shift", forward_scan_code = true }, # right shift
     { scan_code = 0x3A, layer = "symbols" }, # caps lock
@@ -14,18 +17,31 @@ base = [
     { scan_code = 0x56, layer = "navigation_numpad" }, # `>` on german layout
     { scan_code = 0xE038, layer = "navigation_numpad" }, # `right alt` US layout, `Alt Gr` on german layout
     { scan_code = 0x021D, virtual_keys = [0] }, # ignored additional scan code from `Alt Gr`
+    # Uncomment following lines to use QWERTY/QWERTZ layout for shortcuts
+    # { scan_code = 0x1D, layer = "disabled" }, # left ctrl
+    # { scan_code = 0xE01D, layer = "disabled" }, # right ctrl
+    # { scan_code = 0x38, layer = "disabled" }, # left alt, right alt already used as MOD4
+    # { scan_code = 0xE05B, layer = "disabled" }, # windows key
 ]
 
 shift = [
+    # Dead keys
     { scan_code = 0x29, characters = "\u02C7" }, # Caron
     { scan_code = 0x0D, characters = "\u0327" }, # Combining Cedilla
     { scan_code = 0x1B, characters = "\u0303" }, # Combining Tilde
+    # Numbers and letters
     { scan_code = 0x02, characters = "°§ℓ»«$€„“”—" },
     { scan_code = 0x10, characters = "XVLCWKHGFQẞ" },
     { scan_code = 0x1E, characters = "UIAEOSNRTDY" },
     { scan_code = 0x2C, characters = "ÜÖÄPZBM–•J" },
+    # Layer modifiers
     { scan_code = 0x3A, layer = "l5" }, # caps lock
     { scan_code = 0x2B, layer = "l5" }, # `\` on US layout, `#` key on german layout
+    # Uncomment following lines to use "querty" / "querz" layout for shortcuts
+    # { scan_code = 0x1D, layer = "disabled" }, # left ctrl
+    # { scan_code = 0xE01D, layer = "disabled" }, # right ctrl
+    # { scan_code = 0x38, layer = "disabled" }, # left alt, right alt already used as MOD4
+    # { scan_code = 0xE05B, layer = "disabled" }, # windows key
 ]
 
 symbols = [
@@ -33,6 +49,7 @@ symbols = [
     { scan_code = 0x10, characters = "…_[]^!<>=&ſ" },
     { scan_code = 0x1E, characters = "\\/{}*?()-:@" },
     { scan_code = 0x2C, characters = "#$|~`+%\"`;" },
+    # Layer modifiers
     { scan_code = 0x2A, layer = "l5", forward_scan_code = true }, # left shift
     { scan_code = 0xE036, layer = "l5", forward_scan_code = true }, # right shift
     { scan_code = 0x56, layer = "l6" }, # `>` on german layout
@@ -75,3 +92,5 @@ l6 = [
     { scan_code = 0x2C, characters = "∪∩ℵΠℤ⇐⇔⇒↦Θ" },
     { scan_code = 0x39, characters = "\u202F" }, # narrow no-break space
 ]
+
+disabled = []
