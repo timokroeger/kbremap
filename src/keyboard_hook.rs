@@ -1,7 +1,6 @@
-use std::{
-    cell::RefCell, ffi::OsString, marker::PhantomData, mem, os::windows::ffi::OsStrExt, ptr,
-};
+use std::{cell::RefCell, marker::PhantomData, mem, ptr};
 
+use encode_unicode::{error::InvalidUtf16Slice, CharExt, Utf16Char};
 use winapi::{
     ctypes::*,
     shared::{minwindef::*, windef::*},
@@ -103,15 +102,28 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
 
     let kb_event = &*(l_param as *const KeyboardEvent);
 
-    // If the user calls `SendInput()` in the callback the hook is retriggered immediatelly with
-    // an injected key event. Even though the execution context still is in the same thread we
-    // need to filter out injected events to prevent recursion.
+    // `SendInput()` internally calls the hook function. Filter out injected events
+    // to prevent recursion and potential stack overflows if our remapping logic
+    // sent the injected event.
     if kb_event.is_injected() {
-        println!(
-            ", injected as (sc: {:#06X}, vk: {:#04X})",
-            kb_event.scan_code(),
-            kb_event.virtual_key()
-        );
+        match Utf16Char::from_slice_start(&[kb_event.scan_code()]) {
+            Err(InvalidUtf16Slice::MissingSecond) => print!(
+                ", injected as (sc: {:#06X}, vk: {:#04X}) and ",
+                kb_event.scan_code(),
+                kb_event.virtual_key()
+            ),
+            Err(InvalidUtf16Slice::FirstLowSurrogate) => println!(
+                "(sc: {:#06X}, vk: {:#04X})",
+                kb_event.scan_code(),
+                kb_event.virtual_key()
+            ),
+            _ => println!(
+                ", injected as (sc: {:#06X}, vk: {:#04X})",
+                kb_event.scan_code(),
+                kb_event.virtual_key()
+            ),
+        }
+
         return CallNextHookEx(ptr::null_mut(), code, w_param, l_param);
     }
 
@@ -133,7 +145,13 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
             println!("ignored");
         }
         Remap::Character(c) => {
-            send_char(kb_event, c);
+            if let Some(vk) = get_virtual_key(c) {
+                print!("remapped to `{}` as virtual key", c);
+                send_key(kb_event, vk);
+            } else {
+                print!("remapped to `{}` as unicode input", c);
+                send_unicode(kb_event, c);
+            }
         }
         Remap::VirtualKey(vk) => {
             print!("remapped to virtual key {:#04X}", vk);
@@ -144,21 +162,30 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
     -1
 }
 
-fn send_unicode(kb_event: &KeyboardEvent, c: u16) {
+fn send_unicode(kb_event: &KeyboardEvent, c: char) {
     unsafe {
-        let mut kb_input: KEYBDINPUT = mem::zeroed();
-        kb_input.wScan = c;
-        kb_input.dwFlags = KEYEVENTF_UNICODE;
-        if kb_event.up() {
-            kb_input.dwFlags |= KEYEVENTF_KEYUP;
-        }
-        kb_input.time = kb_event.time();
+        let mut inputs: [INPUT; 2] = mem::zeroed();
+        let n_inputs = inputs
+            .iter_mut()
+            .zip(c.to_utf16())
+            .map(|(input, c)| {
+                let mut kb_input: KEYBDINPUT = mem::zeroed();
+                kb_input.wScan = c;
+                kb_input.dwFlags = KEYEVENTF_UNICODE;
+                if kb_event.up() {
+                    kb_input.dwFlags |= KEYEVENTF_KEYUP;
+                }
+                kb_input.time = kb_event.time();
+                input.type_ = INPUT_KEYBOARD;
+                *input.u.ki_mut() = kb_input;
+            })
+            .count();
 
-        let mut input: INPUT = mem::zeroed();
-        input.type_ = INPUT_KEYBOARD;
-        *input.u.ki_mut() = kb_input;
-
-        SendInput(1, &mut input, mem::size_of_val(&input) as _);
+        SendInput(
+            n_inputs as u32,
+            &mut inputs[0],
+            mem::size_of::<INPUT>() as _,
+        );
     }
 }
 
@@ -180,48 +207,43 @@ fn send_key(kb_event: &KeyboardEvent, vk: u8) {
     }
 }
 
-fn send_char(kb_event: &KeyboardEvent, c: char) {
+fn get_virtual_key(c: char) -> Option<u8> {
     unsafe {
-        // Convert to UTF-16
-        let c16 = OsString::from(c.to_string()).encode_wide().next().unwrap();
-
         let layout = GetKeyboardLayout(GetWindowThreadProcessId(
             GetForegroundWindow(),
             ptr::null_mut(),
         ));
-        let vk_state = VkKeyScanExW(c16, layout);
+        let vk_state = VkKeyScanExW(c.to_utf16()[0], layout);
+        if vk_state == -1 {
+            // No virtual key for this character exists on the current layout.
+            return None;
+        }
+
         let dead_key =
             MapVirtualKeyExW((vk_state & 0xFF) as u32, MAPVK_VK_TO_CHAR, layout) & 0x80000000 != 0;
+        if dead_key {
+            // We have virtual key but it is a dead-key, e.g.: `^` or `~` on international layouts.
+            return None;
+        }
 
         // Check if the modifer keys, which are required to type the character, are pressed.
-        let mut modifiers_matching = true;
         let modifier_pressed = |vk| (GetAsyncKeyState(vk) as u16) & 0x8000 != 0;
 
         let shift = vk_state & 0x100 != 0;
-        if shift {
-            modifiers_matching = modifier_pressed(VK_SHIFT);
+        if shift && !modifier_pressed(VK_SHIFT) {
+            return None;
         }
 
         let ctrl = vk_state & 0x200 != 0;
-        if ctrl {
-            modifiers_matching = modifier_pressed(VK_CONTROL);
+        if ctrl && !modifier_pressed(VK_CONTROL) {
+            return None;
         }
 
         let alt = vk_state & 0x400 != 0;
-        if alt {
-            modifiers_matching = modifier_pressed(VK_MENU);
+        if alt && !modifier_pressed(VK_CONTROL) {
+            return None;
         }
 
-        // Send the character as unicode input if:
-        // 1. There is no key for the character available on the current keyboard layout
-        // 2. Cannot be pressed with the currently active modifiers
-        // 3. The key for this character is a dead key (diacritic)
-        if vk_state == -1 || !modifiers_matching || dead_key {
-            print!("remapped to `{}` as unicode input", c);
-            send_unicode(kb_event, c16);
-        } else {
-            print!("remapped to `{}` as virtual key", c);
-            send_key(kb_event, vk_state as u8);
-        }
+        Some(vk_state as u8)
     }
 }

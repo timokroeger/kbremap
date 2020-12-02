@@ -5,8 +5,9 @@ Configuration loosely inspired by custom keyboard firmwares like [QMK](https://q
 
 ## Features
 * Remap any key to any other key
-* Support for Unicode characters
+* Supports Unicode characters, including most Emojis 😊
 * Support for any number of virtual layers
+* Click on tray icon enables or bypasses the layout
 * No installation or administrator rights required
 * Uses the windows low-level keyboard hook for maximum compatibility
 

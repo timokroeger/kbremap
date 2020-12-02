@@ -31,6 +31,8 @@ base = [
     # The `virtual_keys` works similar to the `characters` target but takes a collection of virtual keys.
     # An empty target can be used to ignore scan codes.
     { scan_code = 0x021D, virtual_keys = [] }, # ignored additional scan code from `Alt Gr`
+    # Emoji Keys! Attention: Some Emojis use multiple chacters which are mapped to multipe scan codes.
+    { scan_code = 0x29, characters = "😊" },
 ]
 
 # A layer without any mapping: Forward all key presses without change.
