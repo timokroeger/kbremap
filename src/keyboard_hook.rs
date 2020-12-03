@@ -260,7 +260,10 @@ fn get_virtual_key(c: char) -> Option<u8> {
         let modifier_pressed = |vk| (GetAsyncKeyState(vk) as u16) & 0x8000 != 0;
 
         let shift = vk_state & 0x100 != 0;
-        if shift && !modifier_pressed(VK_SHIFT) {
+        let caps_lock_enabled = (GetKeyState(VK_CAPITAL) as u16) & 0x0001 != 0;
+        if shift && (modifier_pressed(VK_SHIFT) == caps_lock_enabled) {
+            // Shift required but not pressed and caps lock disabled OR
+            // Shift required and pressed but caps lock enabled (which cancels the shift press).
             return None;
         }
 
