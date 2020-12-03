@@ -1,3 +1,5 @@
+//! Safe abstraction over the low-level windows keyboard hook API.
+
 use std::{cell::RefCell, marker::PhantomData, mem, ptr};
 
 use encode_unicode::{error::InvalidUtf16Slice, CharExt, Utf16Char};
@@ -7,8 +9,13 @@ use winapi::{
     um::winuser::*,
 };
 
-thread_local!(static HOOK: RefCell<Option<Box<dyn FnMut(&KeyboardEvent) -> Remap>>> = RefCell::new(None));
+thread_local! {
+    /// Stores the used provided hook callback for the current thread.
+    static HOOK: RefCell<Option<Box<dyn FnMut(&KeyboardEvent) -> Remap>>> = RefCell::new(None)
+}
 
+/// Wrapper for the low-level keyboard hook API.
+/// Automatically unregisters the hook when dropped.
 pub struct KeyboardHook<'a> {
     handle: HHOOK,
     lifetime: PhantomData<&'a ()>,
@@ -51,6 +58,8 @@ impl<'a> Drop for KeyboardHook<'a> {
     }
 }
 
+/// Safe wrapper to access information about a keyboard event.
+/// Passed as argument to the user provieded hook callback.
 #[repr(C)]
 pub struct KeyboardEvent(KBDLLHOOKSTRUCT);
 
@@ -87,14 +96,26 @@ impl KeyboardEvent {
     }
 }
 
+/// Remap action associated with the key. Returned by the user provided hook callback.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Remap {
+    /// Do not remap the key. Forwards the key event without any changes.
     Transparent,
+
+    /// Ignores the key event.
     Ignore,
+
+    /// Sends a (Unicode) character, if possible as key press,
+    /// Ignores the original key event.
     Character(char),
+
+    /// Sends a virtual key press.
+    /// Ignores the original key event.
+    /// Reference: <https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes>
     VirtualKey(u8),
 }
 
+/// The actual WinAPI compatible callback.
 unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     if code != 0 {
         return -1;
@@ -134,6 +155,10 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
         kb_event.virtual_key(),
     );
 
+    // The unwrap cannot fail, because windows only calls this function after
+    // registering the hook (before which we have set [`HOOK`]).
+    // The mutable reference can be taken as long as we properly prevent recursion
+    // by dropping injected events.
     let remap = HOOK.with(|hook| hook.borrow_mut().as_mut().unwrap()(kb_event));
 
     match remap {
@@ -162,6 +187,8 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
     -1
 }
 
+/// Injects a unicode character, knows as `VK_PACKET`.
+/// Interestingly this is faster than sending a regular virtual key event.
 fn send_unicode(kb_event: &KeyboardEvent, c: char) {
     unsafe {
         let mut inputs: [INPUT; 2] = mem::zeroed();
@@ -189,6 +216,7 @@ fn send_unicode(kb_event: &KeyboardEvent, c: char) {
     }
 }
 
+/// Injects a virtual key press.
 fn send_key(kb_event: &KeyboardEvent, vk: u8) {
     unsafe {
         let mut kb_input: KEYBDINPUT = mem::zeroed();
@@ -207,6 +235,8 @@ fn send_key(kb_event: &KeyboardEvent, vk: u8) {
     }
 }
 
+/// Returns a virtual key code if the requested character can be typed with a
+/// single key press/release.
 fn get_virtual_key(c: char) -> Option<u8> {
     unsafe {
         let layout = GetKeyboardLayout(GetWindowThreadProcessId(

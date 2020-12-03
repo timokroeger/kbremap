@@ -20,6 +20,7 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
 };
 
+/// No keys are remapped when set to `true`.
 static BYPASS: AtomicBool = AtomicBool::new(false);
 
 fn main() -> Result<()> {

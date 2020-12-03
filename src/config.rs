@@ -1,3 +1,5 @@
+//! Serde based configuration parser.
+
 use std::collections::HashMap;
 
 use serde::Deserialize;
@@ -39,7 +41,7 @@ impl Config {
         Ok(config)
     }
 
-    pub fn layers(&self) -> impl Iterator<Item = &str> {
+    pub fn layer_names(&self) -> impl Iterator<Item = &str> {
         self.layers.keys().map(String::as_str)
     }
 

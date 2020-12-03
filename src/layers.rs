@@ -1,3 +1,5 @@
+//! Remapping and layer switching logic.
+
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{ensure, Context, Result};
@@ -13,7 +15,7 @@ struct Layer {
     activation_sequences: Vec<Vec<u16>>,
 }
 
-/// Collection of virtual keyboard layer and logic to switch between them
+/// Collection of virtual keyboard layers and logic to switch between them
 /// depending on which modifier keys are pressed.
 #[derive(Debug)]
 pub struct Layers {
@@ -79,7 +81,7 @@ impl Layers {
         // Virtual keyboard layer activation can be viewed as graph where layers
         // are nodes and layer action keys are egdes.
         let mut layer_graph: HashMap<&str, Vec<(u16, &str)>> = HashMap::new();
-        for layer_name in config.layers() {
+        for layer_name in config.layer_names() {
             layer_graph.insert(layer_name, config.layer_modifiers(layer_name).collect());
         }
 
@@ -89,7 +91,7 @@ impl Layers {
         let mut visited = HashSet::new();
         let mut finished = HashSet::new();
         check_layer_graph("base", &layer_graph, &mut visited, &mut finished)?;
-        for layer_name in config.layers() {
+        for layer_name in config.layer_names() {
             if !finished.contains(layer_name) {
                 println!("Warning: Unused layer {:?}", layer_name);
             }
@@ -154,6 +156,7 @@ impl Layers {
         }
     }
 
+    /// Returs the remap action associated with the scan code.
     pub fn get_remapping(&mut self, scan_code: u16, up: bool) -> Remap {
         let remap = match self.active_layer() {
             Some(layer) => match layer.mappings.get(&scan_code) {
