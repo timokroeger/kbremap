@@ -1,7 +1,16 @@
 # `kbremap`
 
-Custom keyboard layouts for windows. Fully configurable for quick prototyping of new layouts.  
-Configuration loosely inspired by custom keyboard firmwares like [QMK](https://qmk.fm/).
+```
+Usage: kbremap.exe [--config <config>]
+
+Custom keyboard layouts for windows. Fully configurable for quick prototyping of new layouts.
+
+Options:
+  --config          path to configuration file (default: `config.toml`)
+  --help            display usage information
+```
+
+Configuration loosely inspired by custom keyboard firmware like [QMK](https://qmk.fm/).
 
 ## Features
 * Remap any key to any other key

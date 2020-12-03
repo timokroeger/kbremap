@@ -20,6 +20,14 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
 };
 
+/// Custom keyboard layouts for windows. Fully configurable for quick prototyping of new layouts.
+#[derive(argh::FromArgs)]
+struct CommandLineArguments {
+    /// path to configuration file (default: `config.toml`)
+    #[argh(option)]
+    config: Option<String>,
+}
+
 /// No keys are remapped when set to `true`.
 static BYPASS: AtomicBool = AtomicBool::new(false);
 
@@ -30,7 +38,9 @@ fn main() -> Result<()> {
         AttachConsole(ATTACH_PARENT_PROCESS);
     };
 
-    let config_str = fs::read_to_string("config.toml")?;
+    let args: CommandLineArguments = argh::from_env();
+
+    let config_str = fs::read_to_string(args.config.as_deref().unwrap_or("config.toml"))?;
     let config = Config::from_toml(&config_str)?;
 
     // Spawn a console window if debug output was requested in the config and
