@@ -66,7 +66,7 @@ fn main() -> Result<()> {
     enum Events {
         ToggleEnabled,
         Exit,
-    };
+    }
     let event_loop = EventLoop::<Events>::with_user_event();
     let event_loop_proxy = event_loop.create_proxy();
 
@@ -83,7 +83,7 @@ fn main() -> Result<()> {
         .unwrap();
 
     // Construct the `Icon`s here, after creating the tray, because the builder
-    // requires the raw icon resource which get's consumed now.
+    // requires the raw icon resources before we consume them here.
     let icon_enabled = Icon::from_buffer(icon_enabled, None, None).unwrap();
     let icon_disabled = Icon::from_buffer(icon_disabled, None, None).unwrap();
 

@@ -9,7 +9,7 @@ debug_output = false
 # Windows translates the scan code to a virtual key depending on the active system layout.
 # Virtual keys: https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 #
-# You can use the debug output to query scan code (sc) and virtual (sc) information.
+# You can use the debug output to query scan code (sc) and virtual (vk) information.
 base = [
     # The `characters` target remaps multiple keys to (Unicode) characters starting
     # at `scan_code`. Increments `scan_code` by one for each following character.
