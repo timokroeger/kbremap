@@ -29,13 +29,14 @@ impl<'a> KeyboardHook<'a> {
     /// on the current layout. Uses `VK_PACKET` to pass Unicode characters as if
     /// they were keystrokes for everything else.
     ///
-    /// Returns `None` when called a hook is already registered from the same thread.
+    /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediatelly be unregistered and not work."]
-    pub fn set(callback: impl FnMut(&KeyboardEvent) -> Remap + 'a) -> Option<KeyboardHook<'a>> {
+    pub fn set(callback: impl FnMut(&KeyboardEvent) -> Remap + 'a) -> KeyboardHook<'a> {
         HOOK.with(|hook| {
-            if hook.borrow().is_some() {
-                return None;
-            }
+            assert!(
+                hook.borrow().is_none(),
+                "Only one keyboard hook can be registered per thread."
+            );
 
             // The rust compiler needs type annotations to create a trait object rather than a
             // specialized boxed closure so that we can use transmute in the next step.
@@ -46,14 +47,14 @@ impl<'a> KeyboardHook<'a> {
             // after which the global (thread local) variable `HOOK` will not be acccesed anymore.
             *hook.borrow_mut() = Some(unsafe { mem::transmute(boxed_cb) });
 
-            Some(KeyboardHook {
+            KeyboardHook {
                 handle: unsafe {
                     SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), ptr::null_mut(), 0)
                         .as_mut()
                         .expect("Failed to install low-level keyboard hook.")
                 },
                 lifetime: PhantomData,
-            })
+            }
         })
     }
 }
@@ -61,7 +62,7 @@ impl<'a> KeyboardHook<'a> {
 impl<'a> Drop for KeyboardHook<'a> {
     fn drop(&mut self) {
         unsafe { UnhookWindowsHookEx(self.handle) };
-        HOOK.with(|hook| hook.borrow_mut().take());
+        HOOK.with(|hook| hook.take());
     }
 }
 
