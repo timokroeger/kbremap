@@ -51,7 +51,7 @@ fn main() -> Result<()> {
 
     let mut layers = Layers::new(&config)?;
 
-    let _kbhook = KeyboardHook::set(|key| {
+    let _kbhook = KeyboardHook::set(move |key| {
         if BYPASS.load(Ordering::SeqCst) {
             return Remap::Transparent;
         }

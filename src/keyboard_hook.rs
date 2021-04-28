@@ -30,21 +30,14 @@ impl KeyboardHook {
     ///
     /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediatelly be unregistered and not work."]
-    pub fn set(callback: impl FnMut(&KeyboardEvent) -> Remap) -> KeyboardHook {
+    pub fn set(callback: impl FnMut(&KeyboardEvent) -> Remap + 'static) -> KeyboardHook {
         HOOK.with(|hook| {
             assert!(
                 hook.borrow().is_none(),
                 "Only one keyboard hook can be registered per thread."
             );
 
-            // The rust compiler needs type annotations to create a trait object rather than a
-            // specialized boxed closure so that we can use transmute in the next step.
-            let boxed_cb: Box<dyn FnMut(&KeyboardEvent) -> Remap> = Box::new(callback);
-
-            // Safety: Transmuting to 'static lifetime is required to put the closure in thread
-            // local storage. It is safe to do so because we properly unregister the hook on drop
-            // after which the global (thread local) variable `HOOK` will not be acccesed anymore.
-            *hook.borrow_mut() = Some(unsafe { mem::transmute(boxed_cb) });
+            *hook.borrow_mut() = Some(Box::new(callback));
 
             KeyboardHook {
                 handle: unsafe {
