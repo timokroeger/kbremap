@@ -1,71 +1,56 @@
+# Example Dvorak layout configuration with comments.
+
 # Set to `true` to spawn a console window with debug output.
 # Debug output is always shown when executed from a termnial even when set to false.
 debug_output = false
 
 [layers]
-# A layer is a collection of mappings where each mapping requires a `scan_code` to select a physical key on the keyboard.
-# Scan codes: https://upload.wikimedia.org/wikipedia/commons/3/34/Ps2_de_keyboard_scancode_set_1.svg
+# A layer is a collection of mappings where each mapping consists of a *source* (`scan_code`) and a
+# *target* (e.g. characters, modifiers keys, ...).
 #
-# Windows translates the scan code to a virtual key depending on the active system layout.
-# Virtual keys: https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+# Scan codes are used as source to specify the behaviour of a physical key on the keyboard.
+# Reference: <https://upload.wikimedia.org/wikipedia/commons/3/34/Ps2_de_keyboard_scancode_set_1.svg>
 #
-# You can use the debug output to query scan code (sc) and virtual (vk) information.
+# Scan codes without explicit mapping will use the default Windows layout to translate
+# a key press to a [virtual key code](https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes).
+#
+# Use the debug output to observe scan code (sc) and virtual key code (vk) information while pressing keys.
 base = [
     # The `characters` target remaps multiple keys to (Unicode) characters starting
     # at `scan_code`. Increments `scan_code` by one for each following character.
-    # Simulates a virtual key press if the character exists on the active layout
-    # so that keyborad shortcuts continue to work as expected. Directly injects
-    # Unicode characters otherwise.
-    { scan_code = 0x02, characters = "1234567890-" },
-    { scan_code = 0x10, characters = "bu.,üpclmfx" },
-    { scan_code = 0x1E, characters = "hieaodtrnsß" },
-    { scan_code = 0x2C, characters = "kyöäqjgwvz" },
+    # Simulates a virtual key press if the character exists on the active Windows layout
+    # so that keyborad shortcuts (e.g. Ctrl+a) continue to work as expected.
+    # Injects a Unicode symbol if the character is not available on the Windows layout.
+    { scan_code = 0x02, characters = "1234567890[]" },
+    { scan_code = 0x10, characters = "',.pyfgcrl/=\\" },
+    { scan_code = 0x1E, characters = "aoeaidhtns-" },
+    { scan_code = 0x2C, characters = ";qjkxbmwvz" },
+
     # The `layer` target switches to another virtual layer.
     # Ignores the original scan code if no `virtual_key` is specified.
     { scan_code = 0x2A, layer = "shift", virtual_key = 0xA0 }, # left shift
     { scan_code = 0xE036, layer = "shift", virtual_key = 0xA1 }, # right shift
-    { scan_code = 0x3A, layer = "symbols" }, # caps lock
-    { scan_code = 0x2B, layer = "symbols" }, # '\' on US layout, `#` key on german layout
-    { scan_code = 0x56, layer = "navigation_numpad" }, # `>` on german layout
-    { scan_code = 0xE038, layer = "navigation_numpad" }, # `right alt` US layout, `Alt Gr` on german layout
+
     # The `virtual_keys` works similar to the `characters` target but takes a collection of virtual keys.
     # An empty target can be used to ignore scan codes.
     { scan_code = 0x021D, virtual_keys = [] }, # ignored additional scan code from `Alt Gr`
-    # Emoji Keys! Attention: Some Emojis use multiple chacters which are mapped to multipe scan codes.
-    { scan_code = 0x29, characters = "😊" },
+
+    # Emoji Keys!
+    # { scan_code = 0x29, characters = "🚀" }, # `~` on US layout, `^` on german layout
+
+    # Uncomment following lines to use the system ("querty" / "querz") layout for shortcuts
+    # { scan_code = 0x1D, layer = "disabled" }, # left ctrl
+    # { scan_code = 0xE01D, layer = "disabled" }, # right ctrl
+    # { scan_code = 0x38, layer = "disabled" }, # left alt, right alt already used as MOD4
+    # { scan_code = 0xE05B, layer = "disabled" }, # windows key
+]
+
+shift = [
+    { scan_code = 0x02, characters =  "!@#$%^&*(){}" },
+    { scan_code = 0x10, characters = "\"<>PYFGCRL?+|" },
+    { scan_code = 0x1E, characters =  "AOEAIDHTNS_" },
+    { scan_code = 0x2C, characters =  ":QJKXBMWVZ" },
 ]
 
 # A layer without any mapping: Forward all key presses without change.
-disable = []
-
-shift = [
-    { scan_code = 0x02, characters = "°§ℓ»«$€„“”—" },
-    { scan_code = 0x10, characters = "BU:;ÜPCLMFX" },
-    { scan_code = 0x1E, characters = "HIEAODTRNS" },
-    { scan_code = 0x2C, characters = "KYÖÄQJGWVZ" },
-]
-
-symbols = [
-    { scan_code = 0x02, characters = "¹²³›‹¢¥‚‘’—" },
-    { scan_code = 0x10, characters = "…_[]^!<>=&" },
-    { scan_code = 0x1E, characters = "\\/{}*?()-:@" },
-    { scan_code = 0x2C, characters = "#$|~`+%\"';" },
-]
-
-navigation_numpad = [
-    { scan_code = 0x02, characters = "ªº№⋮·£¤0/*-" },
-    { scan_code = 0x15, characters = "¿" },
-    { scan_code = 0x23, characters = "¡" },
-    # Navigation
-    { scan_code = 0x10, virtual_keys = [0x21, 0x08, 0x26, 0x2E, 0x22] },
-    { scan_code = 0x1E, virtual_keys = [0x24, 0x25, 0x28, 0x27, 0x23] },
-    { scan_code = 0x2C, virtual_keys = [0x1B, 0x09, 0x2D, 0x0D] },
-    # Numpad
-    { scan_code = 0x16, virtual_keys = [0x67, 0x68, 0x69, 0x6B, 0x6D] },
-    { scan_code = 0x24, virtual_keys = [0x64, 0x65, 0x66] },
-    { scan_code = 0x27, characters = ",." },
-    { scan_code = 0x31, characters = ":" },
-    { scan_code = 0x32, virtual_keys = [0x61, 0x62, 0x63] },
-    { scan_code = 0x35, characters = ";" },
-    { scan_code = 0x39, virtual_keys = [0x60] },
-]
+# disable = []
