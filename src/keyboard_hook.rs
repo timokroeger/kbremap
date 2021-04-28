@@ -10,7 +10,7 @@ use winapi::{
 };
 
 thread_local! {
-    /// Stores the used provided hook callback for the current thread.
+    /// Stores the hook callback for the current thread.
     static HOOK: RefCell<Option<Box<dyn FnMut(&KeyboardEvent) -> Remap>>> = RefCell::new(None)
 }
 
@@ -29,14 +29,21 @@ impl<'a> KeyboardHook<'a> {
     /// on the current layout. Uses `VK_PACKET` to pass Unicode characters as if
     /// they were keystrokes for everything else.
     ///
-    /// Returns `None` when called more than once from the same thread.
+    /// Returns `None` when called a hook is already registered from the same thread.
+    #[must_use = "The hook will immediatelly be unregistered and not work."]
     pub fn set(callback: impl FnMut(&KeyboardEvent) -> Remap + 'a) -> Option<KeyboardHook<'a>> {
         HOOK.with(|hook| {
             if hook.borrow().is_some() {
                 return None;
             }
 
+            // The rust compiler needs type annotations to create a trait object rather than a
+            // specialized boxed closure so that we can use transmute in the next step.
             let boxed_cb: Box<dyn FnMut(&KeyboardEvent) -> Remap + 'a> = Box::new(callback);
+
+            // Safety: Transmuting to 'static lifetime is required to put the closure in thread
+            // local storage. It is safe to do so because we properly unregister the hook on drop
+            // after which the global (thread local) variable `HOOK` will not be acccesed anymore.
             *hook.borrow_mut() = Some(unsafe { mem::transmute(boxed_cb) });
 
             Some(KeyboardHook {

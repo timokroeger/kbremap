@@ -57,7 +57,8 @@ fn main() -> Result<()> {
         }
 
         layers.get_remapping(key.scan_code(), key.up())
-    });
+    })
+    .unwrap();
 
     // UI code.
     // The `trayicon` crate provides a nice declarative interface which plays
