@@ -1,6 +1,6 @@
 //! Safe abstraction over the low-level windows keyboard hook API.
 
-use std::{cell::RefCell, marker::PhantomData, mem, ptr};
+use std::{cell::RefCell, mem, ptr};
 
 use encode_unicode::{error::InvalidUtf16Slice, CharExt, Utf16Char};
 use winapi::{
@@ -16,12 +16,11 @@ thread_local! {
 
 /// Wrapper for the low-level keyboard hook API.
 /// Automatically unregisters the hook when dropped.
-pub struct KeyboardHook<'a> {
+pub struct KeyboardHook {
     handle: HHOOK,
-    lifetime: PhantomData<&'a ()>,
 }
 
-impl<'a> KeyboardHook<'a> {
+impl KeyboardHook {
     /// Sets the low-level keyboard hook for this thread.
     ///
     /// Remaps the key event to a unicode character if the closure returns `Some`.
@@ -31,7 +30,7 @@ impl<'a> KeyboardHook<'a> {
     ///
     /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediatelly be unregistered and not work."]
-    pub fn set(callback: impl FnMut(&KeyboardEvent) -> Remap + 'a) -> KeyboardHook<'a> {
+    pub fn set(callback: impl FnMut(&KeyboardEvent) -> Remap) -> KeyboardHook {
         HOOK.with(|hook| {
             assert!(
                 hook.borrow().is_none(),
@@ -40,7 +39,7 @@ impl<'a> KeyboardHook<'a> {
 
             // The rust compiler needs type annotations to create a trait object rather than a
             // specialized boxed closure so that we can use transmute in the next step.
-            let boxed_cb: Box<dyn FnMut(&KeyboardEvent) -> Remap + 'a> = Box::new(callback);
+            let boxed_cb: Box<dyn FnMut(&KeyboardEvent) -> Remap> = Box::new(callback);
 
             // Safety: Transmuting to 'static lifetime is required to put the closure in thread
             // local storage. It is safe to do so because we properly unregister the hook on drop
@@ -53,13 +52,12 @@ impl<'a> KeyboardHook<'a> {
                         .as_mut()
                         .expect("Failed to install low-level keyboard hook.")
                 },
-                lifetime: PhantomData,
             }
         })
     }
 }
 
-impl<'a> Drop for KeyboardHook<'a> {
+impl Drop for KeyboardHook {
     fn drop(&mut self) {
         unsafe { UnhookWindowsHookEx(self.handle) };
         HOOK.with(|hook| hook.take());
