@@ -139,8 +139,22 @@ impl Layers {
         None
     }
 
+    fn get_remapping_current_layer(&mut self, scan_code: u16) -> Remap {
+        match self.active_layer() {
+            Some(layer) => match layer.mappings.get(&scan_code) {
+                Some(r) => *r,
+                None => Remap::Transparent,
+            },
+            None => Remap::Ignore,
+        }
+    }
+
     /// Processes modifers to update select the correct layer.
     fn process_modifiers(&mut self, scan_code: u16, up: bool) {
+        if !self.modifiers.contains(&scan_code) {
+            return;
+        }
+
         let active_idx = self
             .pressed_modifiers
             .iter()
@@ -158,24 +172,17 @@ impl Layers {
 
     /// Returs the remap action associated with the scan code.
     pub fn get_remapping(&mut self, scan_code: u16, up: bool) -> Remap {
-        let remap = match self.active_layer() {
-            Some(layer) => match layer.mappings.get(&scan_code) {
-                Some(r) => *r,
-                None => Remap::Transparent,
-            },
-            None => Remap::Ignore,
-        };
+        // Get the active remapping if the key is already pressed so that we can
+        // send the correct repeated key press or key up event.
+        // If we do not track active key presses the key down and key up events
+        // may not be the same if the layer has changed in between.
+        // When the key is not pressed, get the mapping from the current layer.
+        let remap = self
+            .pressed_keys
+            .remove(&scan_code)
+            .unwrap_or_else(|| self.get_remapping_current_layer(scan_code));
 
-        if self.modifiers.contains(&scan_code) {
-            self.process_modifiers(scan_code, up);
-        }
-
-        if let Some(&remap) = self.pressed_keys.get(&scan_code) {
-            if up {
-                self.pressed_keys.remove(&scan_code);
-            }
-            return remap;
-        }
+        self.process_modifiers(scan_code, up);
 
         if !up {
             self.pressed_keys.insert(scan_code, remap);
