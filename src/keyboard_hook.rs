@@ -256,7 +256,7 @@ fn get_virtual_key(c: char) -> Option<u8> {
         }
 
         // Check if the modifer keys, which are required to type the character, are pressed.
-        let modifier_pressed = |vk| (GetAsyncKeyState(vk) as u16) & 0x8000 != 0;
+        let modifier_pressed = |vk| (GetKeyState(vk) as u16) & 0x8000 != 0;
 
         let shift = vk_state & 0x100 != 0;
         let caps_lock_enabled = (GetKeyState(VK_CAPITAL) as u16) & 0x0001 != 0;
