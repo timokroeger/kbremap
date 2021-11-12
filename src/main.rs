@@ -4,9 +4,10 @@
 mod config;
 mod keyboard_hook;
 mod layers;
+mod tray_icon;
 
 use std::{
-    fs,
+    fs, mem, process, ptr,
     sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -14,13 +15,15 @@ use anyhow::Result;
 use config::Config;
 use keyboard_hook::{KeyboardHook, Remap};
 use layers::Layers;
-use trayicon::{Icon, MenuBuilder, TrayIconBuilder};
-use winit::{
-    event::Event,
-    event_loop::{ControlFlow, EventLoop},
-};
+use tray_icon::{IconResource, TrayIcon};
+use winapi::um::winuser;
 
 /// Custom keyboard layouts for windows. Fully configurable for quick prototyping of new layouts.
+// As defined in `build.rs`
+const RESOURCE_ID_ICON_KEYBOARD: u16 = 1;
+const RESOURCE_ID_ICON_KEYBOARD_DELETE: u16 = 2;
+
+/// Custom keyboard layouts for windows.
 #[derive(argh::FromArgs)]
 struct CommandLineArguments {
     /// path to configuration file (default: `config.toml`)
@@ -60,48 +63,23 @@ fn main() -> Result<()> {
     });
 
     // UI code.
-    // The `trayicon` crate provides a nice declarative interface which plays
-    // well with the `winit` as abstraction layer over the WinAPI message loop.
-    #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-    enum Events {
-        ToggleEnabled,
-        Exit,
-    }
-    let event_loop = EventLoop::<Events>::with_user_event();
-    let event_loop_proxy = event_loop.create_proxy();
+    let mut tray_icon = TrayIcon::new();
+    tray_icon.set_icon(IconResource::load_numeric_id(RESOURCE_ID_ICON_KEYBOARD));
 
-    // Include the icons as resources.
-    let icon_enabled = include_bytes!("../icons/keyboard.ico");
-    let icon_disabled = include_bytes!("../icons/keyboard_delete.ico");
+    // Event loop required for the low-level keyboard hook and the tray icon.
+    unsafe {
+        let mut msg = mem::zeroed();
+        loop {
+            match winuser::GetMessageA(&mut msg, ptr::null_mut(), 0, 0) {
+                1 => {
+                    // We only handle keyboard input in the low-level hook for now.
+                    // winuser::TranslateMessage(&msg);
 
-    let mut tray_icon = TrayIconBuilder::new()
-        .sender_winit(event_loop_proxy)
-        .icon_from_buffer(icon_enabled)
-        .on_click(Events::ToggleEnabled)
-        .menu(MenuBuilder::new().item("E&xit", Events::Exit))
-        .build()
-        .unwrap();
-
-    // Construct the `Icon`s here, after creating the tray, because the builder
-    // requires the raw icon resources before we consume them here.
-    let icon_enabled = Icon::from_buffer(icon_enabled, None, None).unwrap();
-    let icon_disabled = Icon::from_buffer(icon_disabled, None, None).unwrap();
-
-    event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
-
-        match event {
-            Event::UserEvent(Events::ToggleEnabled) => {
-                // 1 xor 1 = 0
-                // 0 xor 1 = 1
-                if !BYPASS.fetch_xor(true, Ordering::SeqCst) {
-                    tray_icon.set_icon(&icon_disabled).unwrap();
-                } else {
-                    tray_icon.set_icon(&icon_enabled).unwrap();
+                    winuser::DispatchMessageA(&msg);
                 }
+                0 => process::exit(msg.wParam as _),
+                _ => unreachable!(),
             }
-            Event::UserEvent(Events::Exit) => *control_flow = ControlFlow::Exit,
-            _ => {}
         }
-    });
+    }
 }

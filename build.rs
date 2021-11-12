@@ -1,7 +1,7 @@
 fn main() {
-    if cfg!(target_os = "windows") {
-        let mut res = winres::WindowsResource::new();
-        res.set_icon("icons/keyboard.ico");
-        res.compile().unwrap();
-    }
+    winres::WindowsResource::new()
+        .set_icon_with_id("icons/keyboard.ico", "1") // icon for the .exe file
+        .set_icon_with_id("icons/keyboard_delete.ico", "2")
+        .compile()
+        .unwrap();
 }
