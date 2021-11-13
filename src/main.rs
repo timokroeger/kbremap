@@ -15,13 +15,15 @@ use anyhow::Result;
 use config::Config;
 use keyboard_hook::{KeyboardHook, Remap};
 use layers::Layers;
-use tray_icon::{IconResource, TrayIcon};
+use tray_icon::{Event, IconResource, TrayIcon};
 use winapi::um::winuser;
 
 /// Custom keyboard layouts for windows. Fully configurable for quick prototyping of new layouts.
 // As defined in `build.rs`
 const RESOURCE_ID_ICON_KEYBOARD: u16 = 1;
 const RESOURCE_ID_ICON_KEYBOARD_DELETE: u16 = 2;
+
+const WM_APP_KBREMAP: u32 = winuser::WM_APP + 738;
 
 /// Custom keyboard layouts for windows.
 #[derive(argh::FromArgs)]
@@ -63,11 +65,10 @@ fn main() -> Result<()> {
     });
 
     // UI code.
-    let mut tray_icon = TrayIcon::new();
-    tray_icon.set_icon(IconResource::load_numeric_id(RESOURCE_ID_ICON_KEYBOARD));
-    tray_icon.on_double_click(|| {
-        println!("doubleclick");
-    });
+    let icon_active = IconResource::load_numeric_id(RESOURCE_ID_ICON_KEYBOARD);
+    let icon_bypass = IconResource::load_numeric_id(RESOURCE_ID_ICON_KEYBOARD_DELETE);
+    let tray_icon = TrayIcon::new(WM_APP_KBREMAP);
+    tray_icon.set_icon(icon_active);
 
     // Event loop required for the low-level keyboard hook and the tray icon.
     unsafe {
@@ -77,6 +78,16 @@ fn main() -> Result<()> {
                 1 => {
                     // We only handle keyboard input in the low-level hook for now.
                     // winuser::TranslateMessage(&msg);
+
+                    if matches!(tray_icon.event_from_message(&msg), Some(Event::DoubleClick)) {
+                        // 1 xor 1 = 0
+                        // 0 xor 1 = 1
+                        if !BYPASS.fetch_xor(true, Ordering::SeqCst) {
+                            tray_icon.set_icon(icon_bypass);
+                        } else {
+                            tray_icon.set_icon(icon_active);
+                        }
+                    }
 
                     winuser::DispatchMessageA(&msg);
                 }

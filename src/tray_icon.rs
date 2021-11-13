@@ -1,4 +1,4 @@
-use std::{mem, process, ptr};
+use std::{mem, ptr};
 
 use once_cell::sync::OnceCell;
 use winapi::{
@@ -9,11 +9,10 @@ use winapi::{
     um::{
         libloaderapi,
         shellapi::{self, NOTIFYICONDATAA},
-        winuser,
+        winuser::{self, MSG},
     },
 };
 
-const TRAYICON_UID: UINT = 873;
 const WM_USER_TRAYICON: UINT = winuser::WM_USER + 873;
 
 #[derive(Clone, Copy)]
@@ -30,13 +29,17 @@ impl IconResource {
     }
 }
 
+pub enum Event {
+    DoubleClick,
+}
+
 struct TrayIconState {
-    on_double_click: Option<Box<dyn FnMut()>>,
+    message: u32,
 }
 
 pub struct TrayIcon {
     hwnd: HWND,
-    id: u32,
+    id: u32, // todo: consolidate with state
 }
 
 impl Drop for TrayIcon {
@@ -53,7 +56,12 @@ impl Drop for TrayIcon {
 }
 
 impl TrayIcon {
-    pub fn new() -> Self {
+    pub fn new(message: u32) -> Self {
+        assert!(
+            message >= winuser::WM_APP && message < winuser::WM_APP + 0x4000,
+            "message must be in the WM_APP range"
+        );
+
         unsafe {
             let hinstance = libloaderapi::GetModuleHandleA(ptr::null());
 
@@ -86,28 +94,20 @@ impl TrayIcon {
             );
             assert_ne!(hwnd, ptr::null_mut());
 
-            // incrementing icon id
-            let tray_icon_id = TRAYICON_UID;
-
             // Create the tray icon
-            let mut notification_data = Self::notification_data(hwnd, tray_icon_id);
+            let mut notification_data = Self::notification_data(hwnd, message);
             notification_data.uFlags = shellapi::NIF_MESSAGE;
             notification_data.uCallbackMessage = WM_USER_TRAYICON;
             shellapi::Shell_NotifyIconA(shellapi::NIM_ADD, &mut notification_data);
 
-            let state = Box::new(TrayIconState {
-                on_double_click: None,
-            });
+            let state = Box::new(TrayIconState { message });
             winuser::SetWindowLongPtrA(
                 hwnd,
                 winuser::GWLP_USERDATA,
                 Box::leak(state) as *const _ as _,
             );
 
-            Self {
-                hwnd,
-                id: tray_icon_id,
-            }
+            Self { hwnd, id: message }
         }
     }
 
@@ -120,8 +120,15 @@ impl TrayIcon {
         }
     }
 
-    pub fn on_double_click(&mut self, cb: impl FnMut() + 'static) {
-        Self::state(&self.hwnd).on_double_click = Some(Box::new(cb));
+    pub fn event_from_message(&self, msg: &MSG) -> Option<Event> {
+        if msg.message != self.id {
+            return None;
+        }
+
+        match msg.lParam as _ {
+            winuser::WM_LBUTTONDBLCLK => Some(Event::DoubleClick),
+            _ => None,
+        }
     }
 
     fn notification_data(hwnd: HWND, id: u32) -> NOTIFYICONDATAA {
@@ -149,17 +156,11 @@ impl TrayIcon {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        let state = Self::state(&hwnd);
-
-        match (msg, lparam as u32) {
-            (WM_USER_TRAYICON, winuser::WM_LBUTTONDBLCLK) => {
-                if let Some(cb) = &mut state.on_double_click {
-                    cb();
-                }
-            }
-            _ => return winuser::DefWindowProcA(hwnd, msg, wparam, lparam),
+        if msg == WM_USER_TRAYICON {
+            let state = Self::state(&hwnd);
+            winuser::PostMessageA(ptr::null_mut(), state.message, wparam, lparam);
+            return 0;
         }
-
-        0
+        winuser::DefWindowProcA(hwnd, msg, wparam, lparam)
     }
 }
