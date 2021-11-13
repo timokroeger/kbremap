@@ -16,6 +16,7 @@ use winapi::{
 const TRAYICON_UID: UINT = 873;
 const WM_USER_TRAYICON: UINT = winuser::WM_USER + 873;
 
+#[derive(Clone, Copy)]
 pub struct IconResource(HICON);
 
 impl IconResource {
@@ -35,13 +36,16 @@ struct TrayIconState {
 
 pub struct TrayIcon {
     hwnd: HWND,
-    notification_data: NOTIFYICONDATAA,
+    id: u32,
 }
 
 impl Drop for TrayIcon {
     fn drop(&mut self) {
         unsafe {
-            shellapi::Shell_NotifyIconA(shellapi::NIM_DELETE, &mut self.notification_data);
+            shellapi::Shell_NotifyIconA(
+                shellapi::NIM_DELETE,
+                &mut Self::notification_data(self.hwnd, self.id),
+            );
             Box::from_raw(Self::state_ptr(self.hwnd));
             winuser::DestroyWindow(self.hwnd);
         }
@@ -86,13 +90,9 @@ impl TrayIcon {
             let tray_icon_id = TRAYICON_UID;
 
             // Create the tray icon
-            let mut notification_data: NOTIFYICONDATAA = mem::zeroed();
-            notification_data.cbSize = mem::size_of_val(&notification_data) as _;
-            notification_data.hWnd = hwnd;
-            notification_data.uID = tray_icon_id;
+            let mut notification_data = Self::notification_data(hwnd, tray_icon_id);
             notification_data.uFlags = shellapi::NIF_MESSAGE;
             notification_data.uCallbackMessage = WM_USER_TRAYICON;
-            *notification_data.u.uVersion_mut() = shellapi::NOTIFYICON_VERSION_4;
             shellapi::Shell_NotifyIconA(shellapi::NIM_ADD, &mut notification_data);
 
             let state = Box::new(TrayIconState {
@@ -106,21 +106,33 @@ impl TrayIcon {
 
             Self {
                 hwnd,
-                notification_data,
+                id: tray_icon_id,
             }
         }
     }
 
-    pub fn set_icon(&mut self, icon: IconResource) {
+    pub fn set_icon(&self, icon: IconResource) {
+        let mut notification_data = Self::notification_data(self.hwnd, self.id);
+        notification_data.uFlags = shellapi::NIF_ICON;
+        notification_data.hIcon = icon.0;
         unsafe {
-            self.notification_data.uFlags |= shellapi::NIF_ICON;
-            self.notification_data.hIcon = icon.0;
-            shellapi::Shell_NotifyIconA(shellapi::NIM_MODIFY, &mut self.notification_data);
+            shellapi::Shell_NotifyIconA(shellapi::NIM_MODIFY, &mut notification_data);
         }
     }
 
     pub fn on_double_click(&mut self, cb: impl FnMut() + 'static) {
         Self::state(&self.hwnd).on_double_click = Some(Box::new(cb));
+    }
+
+    fn notification_data(hwnd: HWND, id: u32) -> NOTIFYICONDATAA {
+        unsafe {
+            let mut notification_data: NOTIFYICONDATAA = mem::zeroed();
+            notification_data.cbSize = mem::size_of_val(&notification_data) as _;
+            notification_data.hWnd = hwnd;
+            notification_data.uID = id;
+            *notification_data.u.uVersion_mut() = shellapi::NOTIFYICON_VERSION_4;
+            notification_data
+        }
     }
 
     fn state_ptr(hwnd: HWND) -> *mut TrayIconState {
@@ -140,15 +152,6 @@ impl TrayIcon {
         let state = Self::state(&hwnd);
 
         match (msg, lparam as u32) {
-            // (WM_USER_TRAYICON, winuser::WM_LBUTTONUP) => {
-            //     // 1 xor 1 = 0
-            //     // 0 xor 1 = 1
-            //     if !BYPASS.fetch_xor(true, Ordering::SeqCst) {
-            //         tray_icon.set_icon(&icon_disabled).unwrap();
-            //     } else {
-            //         tray_icon.set_icon(&icon_enabled).unwrap();
-            //     }
-            // }
             (WM_USER_TRAYICON, winuser::WM_LBUTTONDBLCLK) => {
                 if let Some(cb) = &mut state.on_double_click {
                     cb();
