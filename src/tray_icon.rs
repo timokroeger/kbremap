@@ -1,31 +1,20 @@
 use std::{mem, ptr};
 
 use once_cell::sync::OnceCell;
-use winapi::{
-    shared::{
-        minwindef::{LPARAM, LRESULT, UINT, WPARAM},
-        windef::{HICON, HWND},
-    },
-    um::{
-        libloaderapi,
-        shellapi::{self, NOTIFYICONDATAA},
-        winuser::{self, MSG},
-    },
-};
+use winapi::shared::minwindef::*;
+use winapi::shared::windef::*;
+use winapi::um::libloaderapi::*;
+use winapi::um::shellapi::*;
+use winapi::um::winuser::*;
 
-const WM_USER_TRAYICON: UINT = winuser::WM_USER + 873;
+const WM_USER_TRAYICON: UINT = WM_USER + 873;
 
 #[derive(Clone, Copy)]
 pub struct IconResource(HICON);
 
 impl IconResource {
     pub fn load_numeric_id(id: u16) -> Self {
-        unsafe {
-            Self(winuser::LoadIconA(
-                libloaderapi::GetModuleHandleA(ptr::null()),
-                id as _,
-            ))
-        }
+        unsafe { Self(LoadIconA(GetModuleHandleA(ptr::null()), id as _)) }
     }
 }
 
@@ -40,11 +29,8 @@ pub struct TrayIcon {
 impl Drop for TrayIcon {
     fn drop(&mut self) {
         unsafe {
-            shellapi::Shell_NotifyIconA(
-                shellapi::NIM_DELETE,
-                &mut Self::notification_data(self.hwnd),
-            );
-            winuser::DestroyWindow(self.hwnd);
+            Shell_NotifyIconA(NIM_DELETE, &mut Self::notification_data(self.hwnd));
+            DestroyWindow(self.hwnd);
         }
     }
 }
@@ -52,27 +38,27 @@ impl Drop for TrayIcon {
 impl TrayIcon {
     pub fn new(message: u32) -> Self {
         assert!(
-            message >= winuser::WM_APP && message < winuser::WM_APP + 0x4000,
+            message >= WM_APP && message < WM_APP + 0x4000,
             "message must be in the WM_APP range"
         );
 
         unsafe {
-            let hinstance = libloaderapi::GetModuleHandleA(ptr::null());
+            let hinstance = GetModuleHandleA(ptr::null());
 
             static WINDOW_CLASS: OnceCell<u16> = OnceCell::new();
             let wnd_class_atom = *WINDOW_CLASS.get_or_init(|| {
-                let mut wnd_class: winuser::WNDCLASSA = mem::zeroed();
+                let mut wnd_class: WNDCLASSA = mem::zeroed();
                 wnd_class.lpfnWndProc = Some(Self::wndproc);
                 wnd_class.hInstance = hinstance;
                 wnd_class.lpszClassName = b"trayicon\0" as *const _ as _;
-                let wnd_class_atom = winuser::RegisterClassA(&wnd_class);
+                let wnd_class_atom = RegisterClassA(&wnd_class);
                 assert_ne!(wnd_class_atom, 0);
                 wnd_class_atom
             });
 
             // Create a message only window to receive tray icon mouse events.
             // <https://docs.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows>
-            let hwnd = winuser::CreateWindowExA(
+            let hwnd = CreateWindowExA(
                 0,
                 wnd_class_atom as _,
                 ptr::null(),
@@ -81,7 +67,7 @@ impl TrayIcon {
                 0,
                 0,
                 0,
-                winuser::HWND_MESSAGE,
+                HWND_MESSAGE,
                 ptr::null_mut(),
                 ptr::null_mut(),
                 ptr::null_mut(),
@@ -89,13 +75,13 @@ impl TrayIcon {
             assert_ne!(hwnd, ptr::null_mut());
 
             // Set message as associated data
-            winuser::SetWindowLongPtrA(hwnd, winuser::GWLP_USERDATA, message as _);
+            SetWindowLongPtrA(hwnd, GWLP_USERDATA, message as _);
 
             // Create the tray icon
             let mut notification_data = Self::notification_data(hwnd);
-            notification_data.uFlags = shellapi::NIF_MESSAGE;
+            notification_data.uFlags = NIF_MESSAGE;
             notification_data.uCallbackMessage = WM_USER_TRAYICON;
-            shellapi::Shell_NotifyIconA(shellapi::NIM_ADD, &mut notification_data);
+            Shell_NotifyIconA(NIM_ADD, &mut notification_data);
 
             Self { hwnd }
         }
@@ -103,10 +89,10 @@ impl TrayIcon {
 
     pub fn set_icon(&self, icon: IconResource) {
         let mut notification_data = Self::notification_data(self.hwnd);
-        notification_data.uFlags = shellapi::NIF_ICON;
+        notification_data.uFlags = NIF_ICON;
         notification_data.hIcon = icon.0;
         unsafe {
-            shellapi::Shell_NotifyIconA(shellapi::NIM_MODIFY, &mut notification_data);
+            Shell_NotifyIconA(NIM_MODIFY, &mut notification_data);
         }
     }
 
@@ -116,7 +102,7 @@ impl TrayIcon {
         }
 
         match msg.lParam as _ {
-            winuser::WM_LBUTTONDBLCLK => Some(Event::DoubleClick),
+            WM_LBUTTONDBLCLK => Some(Event::DoubleClick),
             _ => None,
         }
     }
@@ -127,13 +113,13 @@ impl TrayIcon {
             notification_data.cbSize = mem::size_of_val(&notification_data) as _;
             notification_data.hWnd = hwnd;
             notification_data.uID = Self::message(hwnd);
-            *notification_data.u.uVersion_mut() = shellapi::NOTIFYICON_VERSION_4;
+            *notification_data.u.uVersion_mut() = NOTIFYICON_VERSION_4;
             notification_data
         }
     }
 
     fn message(hwnd: HWND) -> u32 {
-        unsafe { winuser::GetWindowLongPtrA(hwnd, winuser::GWLP_USERDATA) as _ }
+        unsafe { GetWindowLongPtrA(hwnd, GWLP_USERDATA) as _ }
     }
 
     unsafe extern "system" fn wndproc(
@@ -143,9 +129,9 @@ impl TrayIcon {
         lparam: LPARAM,
     ) -> LRESULT {
         if msg == WM_USER_TRAYICON {
-            winuser::PostMessageA(ptr::null_mut(), Self::message(hwnd), wparam, lparam);
+            PostMessageA(ptr::null_mut(), Self::message(hwnd), wparam, lparam);
             return 0;
         }
-        winuser::DefWindowProcA(hwnd, msg, wparam, lparam)
+        DefWindowProcA(hwnd, msg, wparam, lparam)
     }
 }

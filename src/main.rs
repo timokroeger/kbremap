@@ -6,24 +6,22 @@ mod keyboard_hook;
 mod layers;
 mod tray_icon;
 
-use std::{
-    fs, mem, process, ptr,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::{fs, mem, process, ptr};
 
 use anyhow::Result;
 use config::Config;
 use keyboard_hook::{KeyboardHook, Remap};
 use layers::Layers;
 use tray_icon::{Event, IconResource, TrayIcon};
-use winapi::um::winuser;
+use winapi::um::winuser::*;
 
 /// Custom keyboard layouts for windows. Fully configurable for quick prototyping of new layouts.
 // As defined in `build.rs`
 const RESOURCE_ID_ICON_KEYBOARD: u16 = 1;
 const RESOURCE_ID_ICON_KEYBOARD_DELETE: u16 = 2;
 
-const WM_APP_KBREMAP: u32 = winuser::WM_APP + 738;
+const WM_APP_KBREMAP: u32 = WM_APP + 738;
 
 /// Custom keyboard layouts for windows.
 #[derive(argh::FromArgs)]
@@ -74,10 +72,10 @@ fn main() -> Result<()> {
     unsafe {
         let mut msg = mem::zeroed();
         loop {
-            match winuser::GetMessageA(&mut msg, ptr::null_mut(), 0, 0) {
+            match GetMessageA(&mut msg, ptr::null_mut(), 0, 0) {
                 1 => {
                     // We only handle keyboard input in the low-level hook for now.
-                    // winuser::TranslateMessage(&msg);
+                    // TranslateMessage(&msg);
 
                     if matches!(tray_icon.event_from_message(&msg), Some(Event::DoubleClick)) {
                         // 1 xor 1 = 0
@@ -89,7 +87,7 @@ fn main() -> Result<()> {
                         }
                     }
 
-                    winuser::DispatchMessageA(&msg);
+                    DispatchMessageA(&msg);
                 }
                 0 => process::exit(msg.wParam as _),
                 _ => unreachable!(),

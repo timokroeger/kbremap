@@ -1,13 +1,14 @@
 //! Safe abstraction over the low-level windows keyboard hook API.
 
-use std::{cell::RefCell, mem, ptr};
+use std::cell::RefCell;
+use std::{mem, ptr};
 
-use encode_unicode::{error::InvalidUtf16Slice, CharExt, Utf16Char};
-use winapi::{
-    ctypes::*,
-    shared::{minwindef::*, windef::*},
-    um::winuser::*,
-};
+use encode_unicode::error::InvalidUtf16Slice;
+use encode_unicode::{CharExt, Utf16Char};
+use winapi::ctypes::*;
+use winapi::shared::minwindef::*;
+use winapi::shared::windef::*;
+use winapi::um::winuser::*;
 
 thread_local! {
     /// Stores the hook callback for the current thread.
