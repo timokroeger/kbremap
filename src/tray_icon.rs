@@ -38,7 +38,15 @@ pub struct TrayIcon {
     notification_data: NOTIFYICONDATAA,
 }
 
-// TODO: impl drop
+impl Drop for TrayIcon {
+    fn drop(&mut self) {
+        unsafe {
+            shellapi::Shell_NotifyIconA(shellapi::NIM_DELETE, &mut self.notification_data);
+            Box::from_raw(Self::state_ptr(self.hwnd));
+            winuser::DestroyWindow(self.hwnd);
+        }
+    }
+}
 
 impl TrayIcon {
     pub fn new() -> Self {
@@ -47,8 +55,6 @@ impl TrayIcon {
 
             static WINDOW_CLASS: OnceCell<u16> = OnceCell::new();
             let wnd_class_atom = *WINDOW_CLASS.get_or_init(|| {
-                // Create a message only window to receive tray icon mouse events.
-                // <https://docs.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows>
                 let mut wnd_class: winuser::WNDCLASSA = mem::zeroed();
                 wnd_class.lpfnWndProc = Some(Self::wndproc);
                 wnd_class.hInstance = hinstance;
@@ -58,6 +64,8 @@ impl TrayIcon {
                 wnd_class_atom
             });
 
+            // Create a message only window to receive tray icon mouse events.
+            // <https://docs.microsoft.com/en-us/windows/win32/winmsg/window-features#message-only-windows>
             let hwnd = winuser::CreateWindowExA(
                 0,
                 wnd_class_atom as _,
@@ -109,12 +117,8 @@ impl TrayIcon {
         }
     }
 
-    fn state(&self) -> &mut TrayIconState {
-        unsafe {
-            (winuser::GetWindowLongPtrA(self.hwnd, winuser::GWLP_USERDATA) as *mut TrayIconState)
-                .as_mut()
-                .unwrap()
-        }
+    fn state_ptr(hwnd: HWND) -> *mut TrayIconState {
+        unsafe { winuser::GetWindowLongPtrA(hwnd, winuser::GWLP_USERDATA) as _ }
     }
 
     unsafe extern "system" fn wndproc(
@@ -123,6 +127,7 @@ impl TrayIcon {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
+        println!("tray {:#X}, {:#X}", msg, lparam as u32);
         match (msg, lparam as u32) {
             // (WM_USER_TRAYICON, winuser::WM_LBUTTONUP) => {
             //     // 1 xor 1 = 0
@@ -133,7 +138,10 @@ impl TrayIcon {
             //         tray_icon.set_icon(&icon_enabled).unwrap();
             //     }
             // }
-            (WM_USER_TRAYICON, winuser::WM_LBUTTONDBLCLK) => process::exit(0),
+            (WM_USER_TRAYICON, winuser::WM_LBUTTONDBLCLK) => {
+                winuser::PostQuitMessage(0);
+                return 0;
+            }
             _ => winuser::DefWindowProcA(hwnd, msg, wparam, lparam),
         }
     }
