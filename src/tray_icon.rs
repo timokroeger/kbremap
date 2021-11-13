@@ -33,13 +33,8 @@ pub enum Event {
     DoubleClick,
 }
 
-struct TrayIconState {
-    message: u32,
-}
-
 pub struct TrayIcon {
     hwnd: HWND,
-    id: u32, // todo: consolidate with state
 }
 
 impl Drop for TrayIcon {
@@ -47,9 +42,8 @@ impl Drop for TrayIcon {
         unsafe {
             shellapi::Shell_NotifyIconA(
                 shellapi::NIM_DELETE,
-                &mut Self::notification_data(self.hwnd, self.id),
+                &mut Self::notification_data(self.hwnd),
             );
-            Box::from_raw(Self::state_ptr(self.hwnd));
             winuser::DestroyWindow(self.hwnd);
         }
     }
@@ -94,25 +88,21 @@ impl TrayIcon {
             );
             assert_ne!(hwnd, ptr::null_mut());
 
+            // Set message as associated data
+            winuser::SetWindowLongPtrA(hwnd, winuser::GWLP_USERDATA, message as _);
+
             // Create the tray icon
-            let mut notification_data = Self::notification_data(hwnd, message);
+            let mut notification_data = Self::notification_data(hwnd);
             notification_data.uFlags = shellapi::NIF_MESSAGE;
             notification_data.uCallbackMessage = WM_USER_TRAYICON;
             shellapi::Shell_NotifyIconA(shellapi::NIM_ADD, &mut notification_data);
 
-            let state = Box::new(TrayIconState { message });
-            winuser::SetWindowLongPtrA(
-                hwnd,
-                winuser::GWLP_USERDATA,
-                Box::leak(state) as *const _ as _,
-            );
-
-            Self { hwnd, id: message }
+            Self { hwnd }
         }
     }
 
     pub fn set_icon(&self, icon: IconResource) {
-        let mut notification_data = Self::notification_data(self.hwnd, self.id);
+        let mut notification_data = Self::notification_data(self.hwnd);
         notification_data.uFlags = shellapi::NIF_ICON;
         notification_data.hIcon = icon.0;
         unsafe {
@@ -121,7 +111,7 @@ impl TrayIcon {
     }
 
     pub fn event_from_message(&self, msg: &MSG) -> Option<Event> {
-        if msg.message != self.id {
+        if msg.message != Self::message(self.hwnd) {
             return None;
         }
 
@@ -131,23 +121,19 @@ impl TrayIcon {
         }
     }
 
-    fn notification_data(hwnd: HWND, id: u32) -> NOTIFYICONDATAA {
+    fn notification_data(hwnd: HWND) -> NOTIFYICONDATAA {
         unsafe {
             let mut notification_data: NOTIFYICONDATAA = mem::zeroed();
             notification_data.cbSize = mem::size_of_val(&notification_data) as _;
             notification_data.hWnd = hwnd;
-            notification_data.uID = id;
+            notification_data.uID = Self::message(hwnd);
             *notification_data.u.uVersion_mut() = shellapi::NOTIFYICON_VERSION_4;
             notification_data
         }
     }
 
-    fn state_ptr(hwnd: HWND) -> *mut TrayIconState {
+    fn message(hwnd: HWND) -> u32 {
         unsafe { winuser::GetWindowLongPtrA(hwnd, winuser::GWLP_USERDATA) as _ }
-    }
-
-    fn state(hwnd: &HWND) -> &mut TrayIconState {
-        unsafe { &mut *Self::state_ptr(*hwnd) }
     }
 
     unsafe extern "system" fn wndproc(
@@ -157,8 +143,7 @@ impl TrayIcon {
         lparam: LPARAM,
     ) -> LRESULT {
         if msg == WM_USER_TRAYICON {
-            let state = Self::state(&hwnd);
-            winuser::PostMessageA(ptr::null_mut(), state.message, wparam, lparam);
+            winuser::PostMessageA(ptr::null_mut(), Self::message(hwnd), wparam, lparam);
             return 0;
         }
         winuser::DefWindowProcA(hwnd, msg, wparam, lparam)
