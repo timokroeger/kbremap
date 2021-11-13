@@ -65,6 +65,9 @@ fn main() -> Result<()> {
     // UI code.
     let mut tray_icon = TrayIcon::new();
     tray_icon.set_icon(IconResource::load_numeric_id(RESOURCE_ID_ICON_KEYBOARD));
+    tray_icon.on_double_click(|| {
+        println!("doubleclick");
+    });
 
     // Event loop required for the low-level keyboard hook and the tray icon.
     unsafe {

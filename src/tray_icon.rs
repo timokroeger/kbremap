@@ -30,7 +30,7 @@ impl IconResource {
 }
 
 struct TrayIconState {
-    id: u32, // TODO: remove
+    on_double_click: Option<Box<dyn FnMut()>>,
 }
 
 pub struct TrayIcon {
@@ -95,7 +95,9 @@ impl TrayIcon {
             *notification_data.u.uVersion_mut() = shellapi::NOTIFYICON_VERSION_4;
             shellapi::Shell_NotifyIconA(shellapi::NIM_ADD, &mut notification_data);
 
-            let state = Box::new(TrayIconState { id: tray_icon_id });
+            let state = Box::new(TrayIconState {
+                on_double_click: None,
+            });
             winuser::SetWindowLongPtrA(
                 hwnd,
                 winuser::GWLP_USERDATA,
@@ -117,8 +119,16 @@ impl TrayIcon {
         }
     }
 
+    pub fn on_double_click(&mut self, cb: impl FnMut() + 'static) {
+        Self::state(&self.hwnd).on_double_click = Some(Box::new(cb));
+    }
+
     fn state_ptr(hwnd: HWND) -> *mut TrayIconState {
         unsafe { winuser::GetWindowLongPtrA(hwnd, winuser::GWLP_USERDATA) as _ }
+    }
+
+    fn state(hwnd: &HWND) -> &mut TrayIconState {
+        unsafe { &mut *Self::state_ptr(*hwnd) }
     }
 
     unsafe extern "system" fn wndproc(
@@ -127,7 +137,8 @@ impl TrayIcon {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        println!("tray {:#X}, {:#X}", msg, lparam as u32);
+        let state = Self::state(&hwnd);
+
         match (msg, lparam as u32) {
             // (WM_USER_TRAYICON, winuser::WM_LBUTTONUP) => {
             //     // 1 xor 1 = 0
@@ -139,10 +150,13 @@ impl TrayIcon {
             //     }
             // }
             (WM_USER_TRAYICON, winuser::WM_LBUTTONDBLCLK) => {
-                winuser::PostQuitMessage(0);
-                return 0;
+                if let Some(cb) = &mut state.on_double_click {
+                    cb();
+                }
             }
-            _ => winuser::DefWindowProcA(hwnd, msg, wparam, lparam),
+            _ => return winuser::DefWindowProcA(hwnd, msg, wparam, lparam),
         }
+
+        0
     }
 }
