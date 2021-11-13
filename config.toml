@@ -1,7 +1,7 @@
 # Example Dvorak layout configuration with comments.
 
 # Set to `true` to spawn a console window with debug output.
-# Debug output is always shown when executed from a termnial even when set to false.
+# Debug output is always shown when executed from a terminal even when set to false.
 debug_output = false
 
 [layers]
