@@ -1,6 +1,7 @@
 //! Safe abstraction over the low-level windows keyboard hook API.
 
 use std::cell::RefCell;
+use std::marker::PhantomData;
 use std::{mem, ptr};
 
 use encode_unicode::error::InvalidUtf16Slice;
@@ -10,18 +11,21 @@ use winapi::shared::minwindef::*;
 use winapi::shared::windef::*;
 use winapi::um::winuser::*;
 
+type HookFn<'a> = dyn FnMut(&KeyboardEvent) -> Remap + 'a;
+
 thread_local! {
     /// Stores the hook callback for the current thread.
-    static HOOK: RefCell<Option<Box<dyn FnMut(&KeyboardEvent) -> Remap>>> = RefCell::new(None)
+    static HOOK: RefCell<Option<Box<HookFn<'static>>>> = RefCell::new(None)
 }
 
 /// Wrapper for the low-level keyboard hook API.
 /// Automatically unregisters the hook when dropped.
-pub struct KeyboardHook {
+pub struct KeyboardHook<'a> {
     handle: HHOOK,
+    lifetime: PhantomData<&'a ()>,
 }
 
-impl KeyboardHook {
+impl<'a> KeyboardHook<'a> {
     /// Sets the low-level keyboard hook for this thread.
     ///
     /// Remaps the key event to a unicode character if the closure returns `Some`.
@@ -31,14 +35,21 @@ impl KeyboardHook {
     ///
     /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediatelly be unregistered and not work."]
-    pub fn set(callback: impl FnMut(&KeyboardEvent) -> Remap + 'static) -> KeyboardHook {
+    pub fn set(callback: impl FnMut(&KeyboardEvent) -> Remap + 'a) -> KeyboardHook<'a> {
         HOOK.with(|hook| {
             assert!(
                 hook.borrow().is_none(),
                 "Only one keyboard hook can be registered per thread."
             );
 
-            *hook.borrow_mut() = Some(Box::new(callback));
+            // The rust compiler needs type annotations to create a trait object rather than a
+            // specialized boxed closure so that we can use transmute in the next step.
+            let boxed_cb: Box<HookFn<'a>> = Box::new(callback);
+
+            // Safety: Transmuting to 'static lifetime is required to put the closure in thread
+            // local storage. It is safe to do so because we properly unregister the hook on drop
+            // after which the global (thread local) variable `HOOK` will not be acccesed anymore.
+            *hook.borrow_mut() = Some(unsafe { mem::transmute(boxed_cb) });
 
             KeyboardHook {
                 handle: unsafe {
@@ -46,12 +57,13 @@ impl KeyboardHook {
                         .as_mut()
                         .expect("Failed to install low-level keyboard hook.")
                 },
+                lifetime: PhantomData,
             }
         })
     }
 }
 
-impl Drop for KeyboardHook {
+impl<'a> Drop for KeyboardHook<'a> {
     fn drop(&mut self) {
         unsafe { UnhookWindowsHookEx(self.handle) };
         HOOK.with(|hook| hook.take());
