@@ -8,7 +8,7 @@ mod resources;
 mod tray_icon;
 mod win32_wrappers;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::cell::Cell;
 use std::{fs, ptr};
 
 use anyhow::Result;
@@ -27,9 +27,6 @@ struct CommandLineArguments {
     #[argh(option)]
     config: Option<String>,
 }
-
-/// No keys are remapped when set to `true`.
-static BYPASS: AtomicBool = AtomicBool::new(false);
 
 fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
@@ -51,8 +48,11 @@ fn main() -> Result<()> {
 
     let mut layers = Layers::new(&config)?;
 
+    // No keys are remapped when set to `false`.
+    let active = &Cell::new(true);
+
     let _kbhook = KeyboardHook::set(move |key| {
-        if BYPASS.load(Ordering::SeqCst) {
+        if !active.get() {
             return Remap::Transparent;
         }
 
@@ -62,12 +62,12 @@ fn main() -> Result<()> {
     // UI code
 
     // Load resources
-    let icon_active = win32_wrappers::icon_from_rc_numeric(resources::ICON_KEYBOARD);
-    let icon_bypass = win32_wrappers::icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
+    let icon_enabled = win32_wrappers::icon_from_rc_numeric(resources::ICON_KEYBOARD);
+    let icon_disabled = win32_wrappers::icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
     let menu = win32_wrappers::popupmenu_from_rc_numeric(resources::MENU);
 
     let tray_icon = TrayIcon::new(WM_APP_TRAYICON);
-    tray_icon.set_icon(icon_active);
+    tray_icon.set_icon(icon_enabled);
 
     // A dummy window handle is required to show a menu.
     let dummy_window = win32_wrappers::create_dummy_window();
@@ -76,12 +76,13 @@ fn main() -> Result<()> {
     win32_wrappers::message_loop(move |msg| {
         match (msg.message, msg.lParam as _) {
             (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => {
-                // 1 xor 1 = 0
-                // 0 xor 1 = 1
-                if !BYPASS.fetch_xor(true, Ordering::SeqCst) {
-                    tray_icon.set_icon(icon_bypass);
+                // Toggle activation state
+                if active.get() {
+                    active.set(false);
+                    tray_icon.set_icon(icon_disabled);
                 } else {
-                    tray_icon.set_icon(icon_active);
+                    active.set(true);
+                    tray_icon.set_icon(icon_enabled);
                 }
             }
             (WM_APP_TRAYICON, WM_RBUTTONUP) => unsafe {
