@@ -1,4 +1,4 @@
-use std::ptr;
+use std::{mem, ptr};
 
 use winapi::shared::windef::*;
 use winapi::um::winnt::*;
@@ -36,5 +36,22 @@ impl MessageOnlyWindow {
 
     pub fn handle(&self) -> HWND {
         self.0
+    }
+}
+
+pub fn message_loop(mut cb: impl FnMut(&MSG)) -> i32 {
+    unsafe {
+        let mut msg = mem::zeroed();
+        loop {
+            match GetMessageW(&mut msg, ptr::null_mut(), 0, 0) {
+                1 => {
+                    cb(&msg);
+                    TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+                0 => return msg.wParam as _,
+                _ => unreachable!(),
+            }
+        }
     }
 }

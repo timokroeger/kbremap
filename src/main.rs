@@ -110,52 +110,33 @@ fn main() -> Result<()> {
     let dummy_window = create_dummy_window();
 
     // Event loop required for the low-level keyboard hook and the tray icon.
-    unsafe {
-        let mut msg = mem::zeroed();
-        loop {
-            match GetMessageW(&mut msg, ptr::null_mut(), 0, 0) {
-                1 => {
-                    println!(
-                        "main msg={:#X} wparam={:#X} lparam={:#X}",
-                        msg.message, msg.wParam, msg.lParam
-                    );
-
-                    if let Some(event_message) = tray_icon.event_from_message(&msg) {
-                        match event_message.event {
-                            Event::DoubleClick => {
-                                // 1 xor 1 = 0
-                                // 0 xor 1 = 1
-                                if !BYPASS.fetch_xor(true, Ordering::SeqCst) {
-                                    tray_icon.set_icon(icon_bypass);
-                                } else {
-                                    tray_icon.set_icon(icon_active);
-                                }
-                            }
-                            Event::RightClick => {
-                                let ok = TrackPopupMenuEx(
-                                    menu,
-                                    TPM_BOTTOMALIGN | TPM_NONOTIFY,
-                                    event_message.x.into(),
-                                    event_message.y.into(),
-                                    dummy_window.handle(),
-                                    ptr::null_mut(),
-                                );
-                                assert_ne!(ok, 0);
-                            }
-                        }
-                    } else if msg.message == WM_COMMAND && msg.wParam == resources::MENU_EXIT.into()
-                    {
-                        PostQuitMessage(0);
+    win32_wrappers::message_loop(move |msg| {
+        if let Some(event_message) = tray_icon.event_from_message(&msg) {
+            match event_message.event {
+                Event::DoubleClick => {
+                    // 1 xor 1 = 0
+                    // 0 xor 1 = 1
+                    if !BYPASS.fetch_xor(true, Ordering::SeqCst) {
+                        tray_icon.set_icon(icon_bypass);
+                    } else {
+                        tray_icon.set_icon(icon_active);
                     }
-
-                    TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
                 }
-                0 => break,
-                _ => unreachable!(),
+                Event::RightClick => unsafe {
+                    TrackPopupMenuEx(
+                        menu,
+                        TPM_BOTTOMALIGN | TPM_NONOTIFY,
+                        event_message.x.into(),
+                        event_message.y.into(),
+                        dummy_window.handle(),
+                        ptr::null_mut(),
+                    );
+                },
             }
+        } else if msg.message == WM_COMMAND && msg.wParam == resources::MENU_EXIT.into() {
+            unsafe { PostQuitMessage(0) };
         }
-    }
+    });
 
     Ok(())
 }
