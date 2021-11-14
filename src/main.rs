@@ -36,7 +36,8 @@ struct CommandLineArguments {
 static BYPASS: AtomicBool = AtomicBool::new(false);
 
 pub fn icon_from_rc_numeric(id: u16) -> HICON {
-    let hicon = unsafe { LoadIconW(GetModuleHandleW(ptr::null()), id as _) };
+    let hicon =
+        unsafe { LoadImageW(GetModuleHandleW(ptr::null()), id as _, IMAGE_ICON, 0, 0, 0) as _ };
     assert_ne!(hicon, ptr::null_mut(), "icon resource {} not found", id);
     hicon
 }
