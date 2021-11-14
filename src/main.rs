@@ -37,7 +37,7 @@ struct CommandLineArguments {
 static BYPASS: AtomicBool = AtomicBool::new(false);
 
 pub fn icon_from_rc_numeric(id: u16) -> HICON {
-    let hicon = unsafe { LoadIconA(GetModuleHandleA(ptr::null()), id as _) };
+    let hicon = unsafe { LoadIconW(GetModuleHandleW(ptr::null()), id as _) };
     assert_ne!(hicon, ptr::null_mut(), "icon resource {} not found", id);
     hicon
 }
@@ -80,7 +80,7 @@ fn main() -> Result<()> {
     unsafe {
         let mut msg = mem::zeroed();
         loop {
-            match GetMessageA(&mut msg, ptr::null_mut(), 0, 0) {
+            match GetMessageW(&mut msg, ptr::null_mut(), 0, 0) {
                 1 => {
                     // We only handle keyboard input in the low-level hook for now.
                     // TranslateMessage(&msg);
@@ -95,7 +95,7 @@ fn main() -> Result<()> {
                         }
                     }
 
-                    DispatchMessageA(&msg);
+                    DispatchMessageW(&msg);
                 }
                 0 => process::exit(msg.wParam as _),
                 _ => unreachable!(),
