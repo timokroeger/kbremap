@@ -10,8 +10,17 @@ use winapi::um::winuser::*;
 
 const WM_USER_TRAYICON: UINT = WM_USER + 873;
 
+#[derive(Debug)]
 pub enum Event {
     DoubleClick,
+    RightClick,
+}
+
+#[derive(Debug)]
+pub struct EventMessage {
+    pub event: Event,
+    pub x: i16,
+    pub y: i16,
 }
 
 pub struct TrayIcon {
@@ -75,6 +84,9 @@ impl TrayIcon {
             notification_data.uCallbackMessage = WM_USER_TRAYICON;
             Shell_NotifyIconW(NIM_ADD, &mut notification_data);
 
+            *notification_data.u.uVersion_mut() = NOTIFYICON_VERSION_4;
+            Shell_NotifyIconW(NIM_SETVERSION, &mut notification_data);
+
             Self { hwnd }
         }
     }
@@ -88,15 +100,22 @@ impl TrayIcon {
         }
     }
 
-    pub fn event_from_message(&self, msg: &MSG) -> Option<Event> {
+    pub fn event_from_message(&self, msg: &MSG) -> Option<EventMessage> {
         if msg.message != Self::message(self.hwnd) {
             return None;
         }
 
-        match msg.lParam as _ {
-            WM_LBUTTONDBLCLK => Some(Event::DoubleClick),
-            _ => None,
-        }
+        let event = match msg.lParam as u32 & 0xFFFF {
+            WM_LBUTTONDBLCLK => Event::DoubleClick,
+            WM_RBUTTONUP => Event::RightClick,
+            _ => return None,
+        };
+
+        Some(EventMessage {
+            event,
+            x: (msg.wParam & 0xFFFF) as i16,
+            y: (msg.wParam >> 16) as i16,
+        })
     }
 
     fn notification_data(hwnd: HWND) -> NOTIFYICONDATAW {
