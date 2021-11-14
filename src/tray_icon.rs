@@ -9,15 +9,6 @@ use winapi::um::winuser::*;
 
 const WM_USER_TRAYICON: UINT = WM_USER + 873;
 
-#[derive(Clone, Copy)]
-pub struct IconResource(HICON);
-
-impl IconResource {
-    pub fn load_numeric_id(id: u16) -> Self {
-        unsafe { Self(LoadIconA(GetModuleHandleA(ptr::null()), id as _)) }
-    }
-}
-
 pub enum Event {
     DoubleClick,
 }
@@ -87,10 +78,10 @@ impl TrayIcon {
         }
     }
 
-    pub fn set_icon(&self, icon: IconResource) {
+    pub fn set_icon(&self, icon: HICON) {
         let mut notification_data = Self::notification_data(self.hwnd);
         notification_data.uFlags = NIF_ICON;
-        notification_data.hIcon = icon.0;
+        notification_data.hIcon = icon;
         unsafe {
             Shell_NotifyIconA(NIM_MODIFY, &mut notification_data);
         }

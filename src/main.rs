@@ -13,7 +13,9 @@ use anyhow::Result;
 use config::Config;
 use keyboard_hook::{KeyboardHook, Remap};
 use layers::Layers;
-use tray_icon::{Event, IconResource, TrayIcon};
+use tray_icon::{Event, TrayIcon};
+use winapi::shared::windef::*;
+use winapi::um::libloaderapi::*;
 use winapi::um::winuser::*;
 
 /// Custom keyboard layouts for windows. Fully configurable for quick prototyping of new layouts.
@@ -33,6 +35,12 @@ struct CommandLineArguments {
 
 /// No keys are remapped when set to `true`.
 static BYPASS: AtomicBool = AtomicBool::new(false);
+
+pub fn icon_from_rc_numeric(id: u16) -> HICON {
+    let hicon = unsafe { LoadIconA(GetModuleHandleA(ptr::null()), id as _) };
+    assert_ne!(hicon, ptr::null_mut(), "icon resource {} not found", id);
+    hicon
+}
 
 fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
@@ -63,8 +71,8 @@ fn main() -> Result<()> {
     });
 
     // UI code.
-    let icon_active = IconResource::load_numeric_id(RESOURCE_ID_ICON_KEYBOARD);
-    let icon_bypass = IconResource::load_numeric_id(RESOURCE_ID_ICON_KEYBOARD_DELETE);
+    let icon_active = icon_from_rc_numeric(RESOURCE_ID_ICON_KEYBOARD);
+    let icon_bypass = icon_from_rc_numeric(RESOURCE_ID_ICON_KEYBOARD_DELETE);
     let tray_icon = TrayIcon::new(WM_APP_KBREMAP);
     tray_icon.set_icon(icon_active);
 
