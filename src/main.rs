@@ -4,6 +4,7 @@
 mod config;
 mod keyboard_hook;
 mod layers;
+mod resources;
 mod tray_icon;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,12 +19,6 @@ use wchar::wchz;
 use winapi::shared::windef::*;
 use winapi::um::libloaderapi::*;
 use winapi::um::winuser::*;
-
-// As defined in `build.rs`
-const RESOURCE_ID_ICON_KEYBOARD: u16 = 1;
-const RESOURCE_ID_ICON_KEYBOARD_DELETE: u16 = 2;
-const RESOURCE_ID_MENU: u16 = 10;
-const RESOURCE_ID_MENU_EXIT: u16 = 11;
 
 const WM_APP_KBREMAP: u32 = WM_APP + 738;
 
@@ -117,9 +112,9 @@ fn main() -> Result<()> {
     // UI code
 
     // Load resources
-    let icon_active = icon_from_rc_numeric(RESOURCE_ID_ICON_KEYBOARD);
-    let icon_bypass = icon_from_rc_numeric(RESOURCE_ID_ICON_KEYBOARD_DELETE);
-    let menu = popupmenu_from_rc_numeric(RESOURCE_ID_MENU);
+    let icon_active = icon_from_rc_numeric(resources::ICON_KEYBOARD);
+    let icon_bypass = icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
+    let menu = popupmenu_from_rc_numeric(resources::MENU);
 
     let tray_icon = TrayIcon::new(WM_APP_KBREMAP);
     tray_icon.set_icon(icon_active);
@@ -161,8 +156,7 @@ fn main() -> Result<()> {
                                 assert_ne!(ok, 0);
                             }
                         }
-                    } else if msg.message == WM_COMMAND
-                        && msg.wParam == RESOURCE_ID_MENU_EXIT.into()
+                    } else if msg.message == WM_COMMAND && msg.wParam == resources::MENU_EXIT.into()
                     {
                         PostQuitMessage(0);
                     }
