@@ -6,6 +6,7 @@ mod keyboard_hook;
 mod layers;
 mod resources;
 mod tray_icon;
+mod win32_wrappers;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{fs, mem, ptr};
@@ -16,6 +17,7 @@ use keyboard_hook::{KeyboardHook, Remap};
 use layers::Layers;
 use tray_icon::{Event, TrayIcon};
 use wchar::wchz;
+use win32_wrappers::MessageOnlyWindow;
 use winapi::shared::windef::*;
 use winapi::um::libloaderapi::*;
 use winapi::um::winuser::*;
@@ -54,7 +56,7 @@ pub fn popupmenu_from_rc_numeric(id: u16) -> HMENU {
     }
 }
 
-fn create_dummy_window() -> HWND {
+fn create_dummy_window() -> MessageOnlyWindow {
     unsafe {
         let mut wnd_class: WNDCLASSW = mem::zeroed();
         wnd_class.lpfnWndProc = Some(DefWindowProcW);
@@ -62,22 +64,7 @@ fn create_dummy_window() -> HWND {
         let wnd_class_atom = RegisterClassW(&wnd_class);
         assert_ne!(wnd_class_atom, 0);
 
-        let hwnd = CreateWindowExW(
-            0,
-            wnd_class_atom as _,
-            ptr::null(),
-            0,
-            0,
-            0,
-            0,
-            0,
-            HWND_MESSAGE,
-            ptr::null_mut(),
-            ptr::null_mut(),
-            ptr::null_mut(),
-        );
-        assert_ne!(hwnd, ptr::null_mut());
-        hwnd
+        MessageOnlyWindow::new(wnd_class_atom as _)
     }
 }
 
@@ -120,7 +107,7 @@ fn main() -> Result<()> {
     tray_icon.set_icon(icon_active);
 
     // A dummy window handle is required to show a menu.
-    let hwnd = create_dummy_window();
+    let dummy_window = create_dummy_window();
 
     // Event loop required for the low-level keyboard hook and the tray icon.
     unsafe {
@@ -150,7 +137,7 @@ fn main() -> Result<()> {
                                     TPM_BOTTOMALIGN | TPM_NONOTIFY,
                                     event_message.x.into(),
                                     event_message.y.into(),
-                                    hwnd,
+                                    dummy_window.handle(),
                                     ptr::null_mut(),
                                 );
                                 assert_ne!(ok, 0);
