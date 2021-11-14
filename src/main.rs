@@ -124,18 +124,20 @@ fn main() -> Result<()> {
                     }
                 }
                 Event::RightClick => unsafe {
-                    TrackPopupMenuEx(
+                    SetForegroundWindow(dummy_window.handle());
+                    let menu_selection = TrackPopupMenuEx(
                         menu,
-                        TPM_BOTTOMALIGN | TPM_NONOTIFY,
+                        TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
                         event_message.x.into(),
                         event_message.y.into(),
                         dummy_window.handle(),
                         ptr::null_mut(),
                     );
+                    if menu_selection == resources::MENU_EXIT.into() {
+                        PostQuitMessage(0);
+                    }
                 },
             }
-        } else if msg.message == WM_COMMAND && msg.wParam == resources::MENU_EXIT.into() {
-            unsafe { PostQuitMessage(0) };
         }
     });
 
