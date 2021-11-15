@@ -11,12 +11,6 @@ use crate::win32_wrappers::MessageOnlyWindow;
 
 const WM_USER_TRAYICON: UINT = WM_USER + 873;
 
-#[derive(Debug)]
-pub enum Event {
-    DoubleClick,
-    RightClick,
-}
-
 pub struct TrayIcon {
     window: MessageOnlyWindow,
 }
@@ -74,20 +68,6 @@ impl TrayIcon {
         unsafe {
             Shell_NotifyIconW(NIM_MODIFY, &mut notification_data);
         }
-    }
-
-    pub fn event_from_message(&self, msg: &MSG) -> Option<Event> {
-        if msg.message != Self::message(self.window.handle()) {
-            return None;
-        }
-
-        let event = match msg.lParam as u32 & 0xFFFF {
-            WM_LBUTTONDBLCLK => Event::DoubleClick,
-            WM_RBUTTONUP => Event::RightClick,
-            _ => return None,
-        };
-
-        Some(event)
     }
 
     fn notification_data(hwnd: HWND) -> NOTIFYICONDATAW {

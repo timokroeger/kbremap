@@ -15,14 +15,14 @@ use anyhow::Result;
 use config::Config;
 use keyboard_hook::{KeyboardHook, Remap};
 use layers::Layers;
-use tray_icon::{Event, TrayIcon};
+use tray_icon::TrayIcon;
 use wchar::wchz;
 use win32_wrappers::MessageOnlyWindow;
 use winapi::shared::windef::*;
 use winapi::um::libloaderapi::*;
 use winapi::um::winuser::*;
 
-const WM_APP_KBREMAP: u32 = WM_APP + 738;
+const WM_APP_TRAYICON: u32 = WM_APP + 873;
 
 /// Custom keyboard layouts for windows.
 #[derive(argh::FromArgs)]
@@ -104,7 +104,7 @@ fn main() -> Result<()> {
     let icon_bypass = icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
     let menu = popupmenu_from_rc_numeric(resources::MENU);
 
-    let tray_icon = TrayIcon::new(WM_APP_KBREMAP);
+    let tray_icon = TrayIcon::new(WM_APP_TRAYICON);
     tray_icon.set_icon(icon_active);
 
     // A dummy window handle is required to show a menu.
@@ -112,32 +112,31 @@ fn main() -> Result<()> {
 
     // Event loop required for the low-level keyboard hook and the tray icon.
     win32_wrappers::message_loop(move |msg| {
-        if let Some(event) = tray_icon.event_from_message(&msg) {
-            match event {
-                Event::DoubleClick => {
-                    // 1 xor 1 = 0
-                    // 0 xor 1 = 1
-                    if !BYPASS.fetch_xor(true, Ordering::SeqCst) {
-                        tray_icon.set_icon(icon_bypass);
-                    } else {
-                        tray_icon.set_icon(icon_active);
-                    }
+        match (msg.message, msg.lParam as _) {
+            (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => {
+                // 1 xor 1 = 0
+                // 0 xor 1 = 1
+                if !BYPASS.fetch_xor(true, Ordering::SeqCst) {
+                    tray_icon.set_icon(icon_bypass);
+                } else {
+                    tray_icon.set_icon(icon_active);
                 }
-                Event::RightClick => unsafe {
-                    SetForegroundWindow(dummy_window.handle());
-                    let menu_selection = TrackPopupMenuEx(
-                        menu,
-                        TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
-                        msg.pt.x,
-                        msg.pt.y,
-                        dummy_window.handle(),
-                        ptr::null_mut(),
-                    );
-                    if menu_selection == resources::MENU_EXIT.into() {
-                        PostQuitMessage(0);
-                    }
-                },
             }
+            (WM_APP_TRAYICON, WM_RBUTTONUP) => unsafe {
+                SetForegroundWindow(dummy_window.handle());
+                let menu_selection = TrackPopupMenuEx(
+                    menu,
+                    TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
+                    msg.pt.x,
+                    msg.pt.y,
+                    dummy_window.handle(),
+                    ptr::null_mut(),
+                );
+                if menu_selection == resources::MENU_EXIT.into() {
+                    PostQuitMessage(0);
+                }
+            },
+            _ => (),
         }
     });
 
