@@ -17,13 +17,6 @@ pub enum Event {
     RightClick,
 }
 
-#[derive(Debug)]
-pub struct EventMessage {
-    pub event: Event,
-    pub x: i16,
-    pub y: i16,
-}
-
 pub struct TrayIcon {
     window: MessageOnlyWindow,
 }
@@ -70,9 +63,6 @@ impl TrayIcon {
             notification_data.uCallbackMessage = WM_USER_TRAYICON;
             Shell_NotifyIconW(NIM_ADD, &mut notification_data);
 
-            *notification_data.u.uVersion_mut() = NOTIFYICON_VERSION_4;
-            Shell_NotifyIconW(NIM_SETVERSION, &mut notification_data);
-
             Self { window }
         }
     }
@@ -86,7 +76,7 @@ impl TrayIcon {
         }
     }
 
-    pub fn event_from_message(&self, msg: &MSG) -> Option<EventMessage> {
+    pub fn event_from_message(&self, msg: &MSG) -> Option<Event> {
         if msg.message != Self::message(self.window.handle()) {
             return None;
         }
@@ -97,11 +87,7 @@ impl TrayIcon {
             _ => return None,
         };
 
-        Some(EventMessage {
-            event,
-            x: (msg.wParam & 0xFFFF) as i16,
-            y: (msg.wParam >> 16) as i16,
-        })
+        Some(event)
     }
 
     fn notification_data(hwnd: HWND) -> NOTIFYICONDATAW {

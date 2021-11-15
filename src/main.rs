@@ -112,8 +112,8 @@ fn main() -> Result<()> {
 
     // Event loop required for the low-level keyboard hook and the tray icon.
     win32_wrappers::message_loop(move |msg| {
-        if let Some(event_message) = tray_icon.event_from_message(&msg) {
-            match event_message.event {
+        if let Some(event) = tray_icon.event_from_message(&msg) {
+            match event {
                 Event::DoubleClick => {
                     // 1 xor 1 = 0
                     // 0 xor 1 = 1
@@ -128,8 +128,8 @@ fn main() -> Result<()> {
                     let menu_selection = TrackPopupMenuEx(
                         menu,
                         TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
-                        event_message.x.into(),
-                        event_message.y.into(),
+                        msg.pt.x,
+                        msg.pt.y,
                         dummy_window.handle(),
                         ptr::null_mut(),
                     );
