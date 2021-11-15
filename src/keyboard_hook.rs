@@ -4,8 +4,7 @@ use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::{mem, ptr};
 
-use encode_unicode::error::InvalidUtf16Slice;
-use encode_unicode::{CharExt, Utf16Char};
+use encode_unicode::CharExt;
 use winapi::ctypes::*;
 use winapi::shared::minwindef::*;
 use winapi::shared::windef::*;
@@ -141,37 +140,20 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
 
     let kb_event = &*(l_param as *const KeyboardEvent);
 
-    // `SendInput()` internally calls the hook function. Filter out injected events
-    // to prevent recursion and potential stack overflows if our remapping logic
-    // sent the injected event.
-    if kb_event.is_injected() {
-        match Utf16Char::from_slice_start(&[kb_event.scan_code()]) {
-            Err(InvalidUtf16Slice::MissingSecond) => print!(
-                ", injected as (sc: {:#06X}, vk: {:#04X}) and ",
-                kb_event.scan_code(),
-                kb_event.virtual_key()
-            ),
-            Err(InvalidUtf16Slice::FirstLowSurrogate) => println!(
-                "(sc: {:#06X}, vk: {:#04X})",
-                kb_event.scan_code(),
-                kb_event.virtual_key()
-            ),
-            _ => println!(
-                ", injected as (sc: {:#06X}, vk: {:#04X})",
-                kb_event.scan_code(),
-                kb_event.virtual_key()
-            ),
-        }
-
-        return CallNextHookEx(ptr::null_mut(), code, w_param, l_param);
-    }
-
     print!(
         "{} (sc: {:#06X}, vk: {:#04X}) ",
         if kb_event.up() { '↑' } else { '↓' },
         kb_event.scan_code(),
-        kb_event.virtual_key(),
+        kb_event.virtual_key()
     );
+
+    // `SendInput()` internally calls the hook function. Filter out injected events
+    // to prevent recursion and potential stack overflows if our remapping logic
+    // sent the injected event.
+    if kb_event.is_injected() {
+        println!("injected");
+        return CallNextHookEx(ptr::null_mut(), code, w_param, l_param);
+    }
 
     let remap = HOOK_STATE.with(|state| {
         // The mutable reference can be taken as long as we properly prevent recursion
@@ -193,15 +175,15 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
         }
         Remap::Character(c) => {
             if let Some(vk) = get_virtual_key(c) {
-                print!("remapped to `{}` as virtual key", c);
+                println!("remapped to `{}` as virtual key", c);
                 send_key(kb_event, vk);
             } else {
-                print!("remapped to `{}` as unicode input", c);
+                println!("remapped to `{}` as unicode input", c);
                 send_unicode(kb_event, c);
             }
         }
         Remap::VirtualKey(vk) => {
-            print!("remapped to virtual key {:#04X}", vk);
+            println!("remapped to virtual key {:#04X}", vk);
             send_key(kb_event, vk);
         }
     }
