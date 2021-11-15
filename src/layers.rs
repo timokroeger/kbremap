@@ -4,7 +4,8 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{ensure, Context, Result};
 
-use crate::{config::Config, keyboard_hook::Remap};
+use crate::config::Config;
+use crate::keyboard_hook::Remap;
 
 /// Mapping table for a virtual keyboard layer.
 #[derive(Debug)]

@@ -4,23 +4,23 @@
 mod config;
 mod keyboard_hook;
 mod layers;
+mod resources;
+mod tray_icon;
+mod win32_wrappers;
 
-use std::{
-    fs,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::{fs, ptr};
 
 use anyhow::Result;
 use config::Config;
 use keyboard_hook::{KeyboardHook, Remap};
 use layers::Layers;
-use trayicon::{Icon, MenuBuilder, TrayIconBuilder};
-use winit::{
-    event::Event,
-    event_loop::{ControlFlow, EventLoop},
-};
+use tray_icon::TrayIcon;
+use winapi::um::winuser::*;
 
-/// Custom keyboard layouts for windows. Fully configurable for quick prototyping of new layouts.
+const WM_APP_TRAYICON: u32 = winapi::um::winuser::WM_APP + 873;
+
+/// Custom keyboard layouts for windows.
 #[derive(argh::FromArgs)]
 struct CommandLineArguments {
     /// path to configuration file (default: `config.toml`)
@@ -59,49 +59,48 @@ fn main() -> Result<()> {
         layers.get_remapping(key.scan_code(), key.up())
     });
 
-    // UI code.
-    // The `trayicon` crate provides a nice declarative interface which plays
-    // well with the `winit` as abstraction layer over the WinAPI message loop.
-    #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-    enum Events {
-        ToggleEnabled,
-        Exit,
-    }
-    let event_loop = EventLoop::<Events>::with_user_event();
-    let event_loop_proxy = event_loop.create_proxy();
+    // UI code
 
-    // Include the icons as resources.
-    let icon_enabled = include_bytes!("../icons/keyboard.ico");
-    let icon_disabled = include_bytes!("../icons/keyboard_delete.ico");
+    // Load resources
+    let icon_active = win32_wrappers::icon_from_rc_numeric(resources::ICON_KEYBOARD);
+    let icon_bypass = win32_wrappers::icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
+    let menu = win32_wrappers::popupmenu_from_rc_numeric(resources::MENU);
 
-    let mut tray_icon = TrayIconBuilder::new()
-        .sender_winit(event_loop_proxy)
-        .icon_from_buffer(icon_enabled)
-        .on_click(Events::ToggleEnabled)
-        .menu(MenuBuilder::new().item("E&xit", Events::Exit))
-        .build()
-        .unwrap();
+    let tray_icon = TrayIcon::new(WM_APP_TRAYICON);
+    tray_icon.set_icon(icon_active);
 
-    // Construct the `Icon`s here, after creating the tray, because the builder
-    // requires the raw icon resources before we consume them here.
-    let icon_enabled = Icon::from_buffer(icon_enabled, None, None).unwrap();
-    let icon_disabled = Icon::from_buffer(icon_disabled, None, None).unwrap();
+    // A dummy window handle is required to show a menu.
+    let dummy_window = win32_wrappers::create_dummy_window();
 
-    event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
-
-        match event {
-            Event::UserEvent(Events::ToggleEnabled) => {
+    // Event loop required for the low-level keyboard hook and the tray icon.
+    win32_wrappers::message_loop(move |msg| {
+        match (msg.message, msg.lParam as _) {
+            (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => {
                 // 1 xor 1 = 0
                 // 0 xor 1 = 1
                 if !BYPASS.fetch_xor(true, Ordering::SeqCst) {
-                    tray_icon.set_icon(&icon_disabled).unwrap();
+                    tray_icon.set_icon(icon_bypass);
                 } else {
-                    tray_icon.set_icon(&icon_enabled).unwrap();
+                    tray_icon.set_icon(icon_active);
                 }
             }
-            Event::UserEvent(Events::Exit) => *control_flow = ControlFlow::Exit,
-            _ => {}
+            (WM_APP_TRAYICON, WM_RBUTTONUP) => unsafe {
+                SetForegroundWindow(dummy_window.handle());
+                let menu_selection = TrackPopupMenuEx(
+                    menu,
+                    TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
+                    msg.pt.x,
+                    msg.pt.y,
+                    dummy_window.handle(),
+                    ptr::null_mut(),
+                );
+                if menu_selection == resources::MENU_EXIT.into() {
+                    PostQuitMessage(0);
+                }
+            },
+            _ => (),
         }
     });
+
+    Ok(())
 }
