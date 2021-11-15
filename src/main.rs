@@ -9,20 +9,16 @@ mod tray_icon;
 mod win32_wrappers;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::{fs, mem, ptr};
+use std::{fs, ptr};
 
 use anyhow::Result;
 use config::Config;
 use keyboard_hook::{KeyboardHook, Remap};
 use layers::Layers;
 use tray_icon::TrayIcon;
-use wchar::wchz;
-use win32_wrappers::MessageOnlyWindow;
-use winapi::shared::windef::*;
-use winapi::um::libloaderapi::*;
 use winapi::um::winuser::*;
 
-const WM_APP_TRAYICON: u32 = WM_APP + 873;
+const WM_APP_TRAYICON: u32 = winapi::um::winuser::WM_APP + 873;
 
 /// Custom keyboard layouts for windows.
 #[derive(argh::FromArgs)]
@@ -34,40 +30,6 @@ struct CommandLineArguments {
 
 /// No keys are remapped when set to `true`.
 static BYPASS: AtomicBool = AtomicBool::new(false);
-
-pub fn icon_from_rc_numeric(id: u16) -> HICON {
-    let hicon =
-        unsafe { LoadImageW(GetModuleHandleW(ptr::null()), id as _, IMAGE_ICON, 0, 0, 0) as _ };
-    assert_ne!(hicon, ptr::null_mut(), "icon resource {} not found", id);
-    hicon
-}
-
-pub fn popupmenu_from_rc_numeric(id: u16) -> HMENU {
-    unsafe {
-        let menu = LoadMenuA(GetModuleHandleA(ptr::null()), id as _);
-        assert_ne!(menu, ptr::null_mut(), "menu resource {} not found", id);
-        let submenu = GetSubMenu(menu, 0);
-        assert_ne!(
-            submenu,
-            ptr::null_mut(),
-            "menu resource {} requires a popup submenu item",
-            id
-        );
-        submenu
-    }
-}
-
-fn create_dummy_window() -> MessageOnlyWindow {
-    unsafe {
-        let mut wnd_class: WNDCLASSW = mem::zeroed();
-        wnd_class.lpfnWndProc = Some(DefWindowProcW);
-        wnd_class.lpszClassName = wchz!("menu").as_ptr();
-        let wnd_class_atom = RegisterClassW(&wnd_class);
-        assert_ne!(wnd_class_atom, 0);
-
-        MessageOnlyWindow::new(wnd_class_atom as _)
-    }
-}
 
 fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
@@ -100,15 +62,15 @@ fn main() -> Result<()> {
     // UI code
 
     // Load resources
-    let icon_active = icon_from_rc_numeric(resources::ICON_KEYBOARD);
-    let icon_bypass = icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
-    let menu = popupmenu_from_rc_numeric(resources::MENU);
+    let icon_active = win32_wrappers::icon_from_rc_numeric(resources::ICON_KEYBOARD);
+    let icon_bypass = win32_wrappers::icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
+    let menu = win32_wrappers::popupmenu_from_rc_numeric(resources::MENU);
 
     let tray_icon = TrayIcon::new(WM_APP_TRAYICON);
     tray_icon.set_icon(icon_active);
 
     // A dummy window handle is required to show a menu.
-    let dummy_window = create_dummy_window();
+    let dummy_window = win32_wrappers::create_dummy_window();
 
     // Event loop required for the low-level keyboard hook and the tray icon.
     win32_wrappers::message_loop(move |msg| {
