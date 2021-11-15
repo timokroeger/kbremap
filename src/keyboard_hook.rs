@@ -15,7 +15,12 @@ type HookFn<'a> = dyn FnMut(&KeyboardEvent) -> Remap + 'a;
 
 thread_local! {
     /// Stores the hook callback for the current thread.
-    static HOOK: RefCell<Option<Box<HookFn<'static>>>> = RefCell::new(None)
+    static HOOK_STATE: RefCell<HookState> = RefCell::default();
+}
+
+#[derive(Default)]
+struct HookState {
+    hook: Option<Box<HookFn<'static>>>,
 }
 
 /// Wrapper for the low-level keyboard hook API.
@@ -36,9 +41,10 @@ impl<'a> KeyboardHook<'a> {
     /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediatelly be unregistered and not work."]
     pub fn set(callback: impl FnMut(&KeyboardEvent) -> Remap + 'a) -> KeyboardHook<'a> {
-        HOOK.with(|hook| {
+        HOOK_STATE.with(|state| {
+            let mut state = state.borrow_mut();
             assert!(
-                hook.borrow().is_none(),
+                state.hook.is_none(),
                 "Only one keyboard hook can be registered per thread."
             );
 
@@ -49,7 +55,7 @@ impl<'a> KeyboardHook<'a> {
             // Safety: Transmuting to 'static lifetime is required to put the closure in thread
             // local storage. It is safe to do so because we properly unregister the hook on drop
             // after which the global (thread local) variable `HOOK` will not be acccesed anymore.
-            *hook.borrow_mut() = Some(unsafe { mem::transmute(boxed_cb) });
+            state.hook = Some(unsafe { mem::transmute(boxed_cb) });
 
             KeyboardHook {
                 handle: unsafe {
@@ -66,7 +72,7 @@ impl<'a> KeyboardHook<'a> {
 impl<'a> Drop for KeyboardHook<'a> {
     fn drop(&mut self) {
         unsafe { UnhookWindowsHookEx(self.handle) };
-        HOOK.with(|hook| hook.take());
+        HOOK_STATE.with(|state| state.take());
     }
 }
 
@@ -167,11 +173,15 @@ unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARA
         kb_event.virtual_key(),
     );
 
-    // The unwrap cannot fail, because windows only calls this function after
-    // registering the hook (before which we have set [`HOOK`]).
-    // The mutable reference can be taken as long as we properly prevent recursion
-    // by dropping injected events.
-    let remap = HOOK.with(|hook| hook.borrow_mut().as_mut().unwrap()(kb_event));
+    let remap = HOOK_STATE.with(|state| {
+        // The mutable reference can be taken as long as we properly prevent recursion
+        // by dropping injected events.
+        let mut state = state.borrow_mut();
+
+        // The unwrap cannot fail, because windows only calls this function after
+        // registering the hook (before which we have set [`HOOK_STATE`]).
+        state.hook.as_mut().unwrap()(kb_event)
+    });
 
     match remap {
         Remap::Transparent => {
