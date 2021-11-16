@@ -134,8 +134,8 @@ pub enum Remap {
 
 /// The actual WinAPI compatible callback.
 unsafe extern "system" fn hook_proc(code: c_int, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
-    if code != 0 {
-        return -1;
+    if code != HC_ACTION {
+        return CallNextHookEx(ptr::null_mut(), code, w_param, l_param);
     }
 
     let kb_event = &*(l_param as *const KeyboardEvent);
