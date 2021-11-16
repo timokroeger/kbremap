@@ -13,6 +13,7 @@ fn main() {
 BEGIN
     POPUP "trayicon"
     BEGIN
+        MENUITEM "Disable", {MENU_DISABLE}
         MENUITEM "Exit", {MENU_EXIT}
     END
 END"#))

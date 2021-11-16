@@ -70,38 +70,43 @@ fn main() -> Result<()> {
     let tray_icon = TrayIcon::new(WM_APP_TRAYICON);
     tray_icon.set_icon(icon_enabled);
 
+    let toggle_enabled = || {
+        if active.get() {
+            active.set(false);
+            tray_icon.set_icon(icon_disabled);
+            unsafe { CheckMenuItem(menu, resources::MENU_DISABLE as _, MF_CHECKED) };
+        } else {
+            active.set(true);
+            tray_icon.set_icon(icon_enabled);
+            unsafe { CheckMenuItem(menu, resources::MENU_DISABLE as _, MF_UNCHECKED) };
+        }
+    };
+
     // A dummy window handle is required to show a menu.
     let dummy_window = win32_wrappers::create_dummy_window();
 
     // Event loop required for the low-level keyboard hook and the tray icon.
-    win32_wrappers::message_loop(move |msg| {
-        match (msg.message, msg.lParam as _) {
-            (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => {
-                // Toggle activation state
-                if active.get() {
-                    active.set(false);
-                    tray_icon.set_icon(icon_disabled);
-                } else {
-                    active.set(true);
-                    tray_icon.set_icon(icon_enabled);
-                }
-            }
-            (WM_APP_TRAYICON, WM_RBUTTONUP) => unsafe {
-                SetForegroundWindow(dummy_window.handle());
-                let menu_selection = TrackPopupMenuEx(
-                    menu,
-                    TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
-                    msg.pt.x,
-                    msg.pt.y,
-                    dummy_window.handle(),
-                    ptr::null_mut(),
-                );
-                if menu_selection == resources::MENU_EXIT.into() {
-                    PostQuitMessage(0);
-                }
-            },
-            _ => (),
+    win32_wrappers::message_loop(move |msg| match (msg.message, msg.lParam as _) {
+        (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => {
+            toggle_enabled();
         }
+        (WM_APP_TRAYICON, WM_RBUTTONUP) => unsafe {
+            SetForegroundWindow(dummy_window.handle());
+            let menu_selection = TrackPopupMenuEx(
+                menu,
+                TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
+                msg.pt.x,
+                msg.pt.y,
+                dummy_window.handle(),
+                ptr::null_mut(),
+            );
+            match menu_selection as _ {
+                resources::MENU_EXIT => PostQuitMessage(0),
+                resources::MENU_DISABLE => toggle_enabled(),
+                _ => (),
+            }
+        },
+        _ => (),
     });
 
     Ok(())
