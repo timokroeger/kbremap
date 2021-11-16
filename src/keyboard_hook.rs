@@ -1,6 +1,7 @@
 //! Safe abstraction over the low-level windows keyboard hook API.
 
 use std::cell::RefCell;
+use std::fmt::Display;
 use std::marker::PhantomData;
 use std::{mem, ptr};
 
@@ -20,6 +21,7 @@ thread_local! {
 #[derive(Default)]
 struct HookState {
     hook: Option<Box<HookFn<'static>>>,
+    disable_caps_lock: bool,
 }
 
 /// Wrapper for the low-level keyboard hook API.
@@ -66,6 +68,10 @@ impl<'a> KeyboardHook<'a> {
             }
         })
     }
+
+    pub fn disable_caps_lock(&self, val: bool) {
+        HOOK_STATE.with(|state| state.borrow_mut().disable_caps_lock = val);
+    }
 }
 
 impl<'a> Drop for KeyboardHook<'a> {
@@ -91,6 +97,17 @@ pub struct KeyEvent {
 
     /// Time in milliseconds since boot.
     pub time: u32,
+}
+
+impl Display for KeyEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{} (sc: {:#06X}, vk: {:#04X})",
+            if self.up { '↑' } else { '↓' },
+            self.scan_code,
+            self.virtual_key
+        ))
+    }
 }
 
 impl KeyEvent {
@@ -138,18 +155,11 @@ unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM)
     let injected = hook_lparam.flags & LLKHF_INJECTED != 0;
     let key = KeyEvent::from_hook_lparam(hook_lparam);
 
-    print!(
-        "{} (sc: {:#06X}, vk: {:#04X}) ",
-        if key.up { '↑' } else { '↓' },
-        key.scan_code,
-        key.virtual_key
-    );
-
     // `SendInput()` internally calls the hook function. Filter out injected events
     // to prevent recursion and potential stack overflows if our remapping logic
     // sent the injected event.
     if injected {
-        println!("injected");
+        println!("{} injected", key);
         return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
     }
 
@@ -157,12 +167,26 @@ unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM)
         // The mutable reference can be taken as long as we properly prevent recursion
         // by dropping injected events.
         let mut state = state.borrow_mut();
+        if state.disable_caps_lock && caps_lock_enabled() {
+            println!("disabling caps lock");
+            send_key(KeyEvent {
+                up: false,
+                virtual_key: VK_CAPITAL as _,
+                ..key
+            });
+            send_key(KeyEvent {
+                up: true,
+                virtual_key: VK_CAPITAL as _,
+                ..key
+            });
+        }
 
         // The unwrap cannot fail, because windows only calls this function after
         // registering the hook (before which we have set [`HOOK_STATE`]).
         state.hook.as_mut().unwrap()(key)
     });
 
+    print!("{} ", key);
     match remap {
         Remap::Transparent => {
             println!("forwarded");
@@ -262,8 +286,7 @@ fn get_virtual_key(c: char) -> Option<u8> {
         let modifier_pressed = |vk| (GetKeyState(vk) as u16) & 0x8000 != 0;
 
         let shift = vk_state & 0x100 != 0;
-        let caps_lock_enabled = (GetKeyState(VK_CAPITAL) as u16) & 0x0001 != 0;
-        if shift && (modifier_pressed(VK_SHIFT) == caps_lock_enabled) {
+        if shift && (modifier_pressed(VK_SHIFT) == caps_lock_enabled()) {
             // Shift required but not pressed and caps lock disabled OR
             // Shift required and pressed but caps lock enabled (which cancels the shift press).
             return None;
@@ -281,4 +304,8 @@ fn get_virtual_key(c: char) -> Option<u8> {
 
         Some(vk_state as u8)
     }
+}
+
+fn caps_lock_enabled() -> bool {
+    unsafe { (GetKeyState(VK_CAPITAL) as u16) & 0x0001 != 0 }
 }

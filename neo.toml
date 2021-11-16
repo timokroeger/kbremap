@@ -1,3 +1,5 @@
+disable_caps_lock = true
+
 [layers]
 base = [
     # Dead keys

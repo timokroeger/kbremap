@@ -51,13 +51,14 @@ fn main() -> Result<()> {
     // No keys are remapped when set to `false`.
     let active = &Cell::new(true);
 
-    let _kbhook = KeyboardHook::set(move |key| {
+    let kbhook = KeyboardHook::set(move |key| {
         if !active.get() {
             return Remap::Transparent;
         }
 
-        layers.get_remapping(key.scan_code(), key.up())
+        layers.get_remapping(key.scan_code, key.up)
     });
+    kbhook.disable_caps_lock(config.disable_caps_lock);
 
     // UI code
 

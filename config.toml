@@ -4,6 +4,11 @@
 # Debug output is always shown when executed from a terminal even when set to false.
 debug_output = false
 
+# Set to `true` to disable caps lock.
+# Useful when the caps lock is remapped but the caps lock state is toggled externally
+# for example by RDP or other programs running with admin rights.
+disable_caps_lock = false
+
 [layers]
 # A layer is a collection of mappings where each mapping consists of a *source* (`scan_code`) and a
 # *target* (e.g. characters, modifiers keys, ...).
