@@ -11,7 +11,7 @@ use winapi::shared::minwindef::*;
 use winapi::shared::windef::*;
 use winapi::um::winuser::*;
 
-type HookFn<'a> = dyn FnMut(KeyEvent) -> Remap + 'a;
+type HookFn<'a> = dyn FnMut(KeyEvent) -> Option<Remap> + 'a;
 
 thread_local! {
     /// Stores the hook callback for the current thread.
@@ -41,7 +41,7 @@ impl<'a> KeyboardHook<'a> {
     ///
     /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediatelly be unregistered and not work."]
-    pub fn set(callback: impl FnMut(KeyEvent) -> Remap + 'a) -> KeyboardHook<'a> {
+    pub fn set(callback: impl FnMut(KeyEvent) -> Option<Remap> + 'a) -> KeyboardHook<'a> {
         HOOK_STATE.with(|state| {
             let mut state = state.borrow_mut();
             assert!(
@@ -129,9 +129,6 @@ impl KeyEvent {
 /// Remap action associated with the key. Returned by the user provided hook callback.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Remap {
-    /// Do not remap the key. Forwards the key event without any changes.
-    Transparent,
-
     /// Ignores the key event.
     Ignore,
 
@@ -187,11 +184,12 @@ unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM)
     });
 
     print!("{} ", key);
-    match remap {
-        Remap::Transparent => {
-            println!("forwarded");
-            return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
-        }
+    if remap.is_none() {
+        println!("forwarded");
+        return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
+    }
+
+    match remap.unwrap() {
         Remap::Ignore => {
             println!("ignored");
         }

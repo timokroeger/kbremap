@@ -13,7 +13,7 @@ use std::{fs, ptr};
 
 use anyhow::Result;
 use config::Config;
-use keyboard_hook::{KeyboardHook, Remap};
+use keyboard_hook::KeyboardHook;
 use layers::Layers;
 use tray_icon::TrayIcon;
 use winapi::um::winuser::*;
@@ -53,7 +53,7 @@ fn main() -> Result<()> {
 
     let kbhook = KeyboardHook::set(move |key| {
         if !active.get() {
-            return Remap::Transparent;
+            return None;
         }
 
         layers.get_remapping(key.scan_code, key.up)

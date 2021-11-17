@@ -140,13 +140,10 @@ impl Layers {
         None
     }
 
-    fn get_remapping_current_layer(&mut self, scan_code: u16) -> Remap {
+    fn get_remapping_current_layer(&mut self, scan_code: u16) -> Option<Remap> {
         match self.active_layer() {
-            Some(layer) => match layer.mappings.get(&scan_code) {
-                Some(r) => *r,
-                None => Remap::Transparent,
-            },
-            None => Remap::Ignore,
+            Some(layer) => layer.mappings.get(&scan_code).copied(),
+            None => Some(Remap::Ignore),
         }
     }
 
@@ -172,7 +169,7 @@ impl Layers {
     }
 
     /// Returs the remap action associated with the scan code.
-    pub fn get_remapping(&mut self, scan_code: u16, up: bool) -> Remap {
+    pub fn get_remapping(&mut self, scan_code: u16, up: bool) -> Option<Remap> {
         // Get the active remapping if the key is already pressed so that we can
         // send the correct repeated key press or key up event.
         // If we do not track active key presses the key down and key up events
@@ -181,12 +178,14 @@ impl Layers {
         let remap = self
             .pressed_keys
             .remove(&scan_code)
-            .unwrap_or_else(|| self.get_remapping_current_layer(scan_code));
+            .or_else(|| self.get_remapping_current_layer(scan_code));
 
         self.process_modifiers(scan_code, up);
 
         if !up {
-            self.pressed_keys.insert(scan_code, remap);
+            if let Some(remap) = remap {
+                self.pressed_keys.insert(scan_code, remap);
+            }
         }
 
         remap
@@ -213,61 +212,63 @@ mod tests {
         let config = Config::from_toml(config_str)?;
         let mut layers = Layers::new(&config)?;
 
+        use Remap::*;
+
         // L0
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
 
         // L1
-        assert_eq!(layers.get_remapping(0x11, false), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('1'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('1'));
-        assert_eq!(layers.get_remapping(0x11, true), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
+        assert_eq!(layers.get_remapping(0x11, false), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('1')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('1')));
+        assert_eq!(layers.get_remapping(0x11, true), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
 
         // L2
-        assert_eq!(layers.get_remapping(0x12, false), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('2'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('2'));
-        assert_eq!(layers.get_remapping(0x12, true), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
+        assert_eq!(layers.get_remapping(0x12, false), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('2')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('2')));
+        assert_eq!(layers.get_remapping(0x12, true), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
 
         // L1 -> L3 -> L2
-        assert_eq!(layers.get_remapping(0x11, false), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('1'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('1'));
-        assert_eq!(layers.get_remapping(0x12, false), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('3'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('3'));
-        assert_eq!(layers.get_remapping(0x11, true), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('2'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('2'));
-        assert_eq!(layers.get_remapping(0x12, true), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
+        assert_eq!(layers.get_remapping(0x11, false), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('1')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('1')));
+        assert_eq!(layers.get_remapping(0x12, false), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('3')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('3')));
+        assert_eq!(layers.get_remapping(0x11, true), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('2')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('2')));
+        assert_eq!(layers.get_remapping(0x12, true), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
 
         // L2 -> XX -> L1
-        assert_eq!(layers.get_remapping(0x12, false), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('2'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('2'));
-        assert_eq!(layers.get_remapping(0x11, false), Remap::Transparent);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x12, true), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('1'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('1'));
-        assert_eq!(layers.get_remapping(0x11, true), Remap::Transparent);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
+        assert_eq!(layers.get_remapping(0x12, false), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('2')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('2')));
+        assert_eq!(layers.get_remapping(0x11, false), None);
+        assert_eq!(layers.get_remapping(0x20, false), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x12, true), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('1')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('1')));
+        assert_eq!(layers.get_remapping(0x11, true), None);
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
 
         // Change layer during key press
-        assert_eq!(layers.get_remapping(0x11, false), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('1'));
-        assert_eq!(layers.get_remapping(0x11, true), Remap::Ignore);
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('1'));
-        assert_eq!(layers.get_remapping(0x20, false), Remap::Character('0'));
-        assert_eq!(layers.get_remapping(0x20, true), Remap::Character('0'));
+        assert_eq!(layers.get_remapping(0x11, false), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('1')));
+        assert_eq!(layers.get_remapping(0x11, true), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('1')));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
 
         Ok(())
     }
