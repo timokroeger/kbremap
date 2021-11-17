@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+### Fixed
+- Accidental shift lock #25
 
 ## [1.1.0] - 2021-11-17
 
