@@ -41,7 +41,7 @@ enum MappingTarget {
 
 impl Config {
     pub fn from_toml(config_str: &str) -> Result<Config, toml::de::Error> {
-        let config = toml::from_str(&config_str)?;
+        let config = toml::from_str(config_str)?;
         Ok(config)
     }
 

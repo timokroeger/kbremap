@@ -43,7 +43,7 @@ impl MessageOnlyWindow {
 
 pub fn icon_from_rc_numeric(id: u16) -> HICON {
     let hicon =
-        unsafe { LoadImageW(GetModuleHandleW(ptr::null()), id as _, IMAGE_ICON, 0, 0, 0) as _ };
+        unsafe { LoadImageW(GetModuleHandleW(ptr::null()), id as _, IMAGE_ICON, 0, 0, 0).cast() };
     assert_ne!(hicon, ptr::null_mut(), "icon resource {} not found", id);
     hicon
 }

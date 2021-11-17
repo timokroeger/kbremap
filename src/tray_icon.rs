@@ -29,7 +29,7 @@ impl Drop for TrayIcon {
 impl TrayIcon {
     pub fn new(message: u32) -> Self {
         assert!(
-            message >= WM_APP && message < WM_APP + 0x4000,
+            (WM_APP..WM_APP + 0x4000).contains(&message),
             "message must be in the WM_APP range"
         );
 

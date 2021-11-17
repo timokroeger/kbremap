@@ -104,9 +104,10 @@ impl Layers {
 
         // Get a set of all modifiers.
         let modifiers = activation_sequences
-            .iter()
-            .map(|(_, seqs)| seqs.iter().map(|seq| seq.iter()).flatten().copied())
+            .values()
             .flatten()
+            .flatten()
+            .copied()
             .collect();
 
         let mut layers = Vec::new();
