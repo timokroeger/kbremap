@@ -1,99 +1,160 @@
-use std::{mem, ptr};
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use wchar::wchz;
-use winapi::shared::minwindef::*;
-use winapi::shared::windef::*;
-use winapi::um::libloaderapi::*;
-use winapi::um::shellapi::*;
-use winapi::um::winuser::*;
+use native_windows_gui::{
+    EmbedResource, Event, EventHandler, GlobalCursor, Icon, Menu, MenuItem, MessageWindow,
+    NwgError, RawEventHandler, TrayNotification,
+};
 
-use crate::win32_wrappers::MessageOnlyWindow;
+use crate::resources;
 
-const WM_USER_TRAYICON: UINT = WM_USER + 873;
+#[derive(Default)]
+struct State {
+    disabled: bool,
+}
+
+#[derive(Default)]
+struct TrayIconData {
+    resources: EmbedResource,
+    icon_enabled: Icon,
+    icon_disabled: Icon,
+    window: MessageWindow,
+    tray: TrayNotification,
+    tray_menu: Menu,
+    tray_menu_disable: MenuItem,
+    tray_menu_exit: MenuItem,
+    state: RefCell<State>,
+}
+
+impl TrayIconData {
+    fn show_menu(&self) {
+        let (x, y) = GlobalCursor::position();
+        self.tray_menu.popup(x, y);
+    }
+
+    fn toggle_disable(&self) {
+        let mut state = self.state.borrow_mut();
+        if state.disabled {
+            state.disabled = false;
+            self.tray.set_icon(&self.icon_enabled);
+            self.tray_menu_disable.set_checked(false);
+        } else {
+            state.disabled = true;
+            self.tray.set_icon(&self.icon_disabled);
+            self.tray_menu_disable.set_checked(true);
+        }
+    }
+
+    fn exit(&self) {
+        native_windows_gui::stop_thread_dispatch();
+    }
+}
 
 pub struct TrayIcon {
-    window: MessageOnlyWindow,
+    data: Rc<TrayIconData>,
+    handler: EventHandler,
+    raw_handler: RawEventHandler,
 }
 
 impl Drop for TrayIcon {
     fn drop(&mut self) {
-        unsafe {
-            Shell_NotifyIconW(
-                NIM_DELETE,
-                &mut Self::notification_data(self.window.handle()),
-            );
-        }
+        native_windows_gui::unbind_event_handler(&self.handler);
+        native_windows_gui::unbind_raw_event_handler(&self.raw_handler).unwrap();
     }
 }
 
 impl TrayIcon {
-    pub fn new(message: u32) -> Self {
-        assert!(
-            (WM_APP..WM_APP + 0x4000).contains(&message),
-            "message must be in the WM_APP range"
-        );
+    pub fn new() -> Result<Self, NwgError> {
+        let mut data = TrayIconData::default();
 
-        unsafe {
-            let hinstance = GetModuleHandleW(ptr::null());
+        // Resources
+        EmbedResource::builder().build(&mut data.resources)?;
 
-            let class_name = wchz!("trayicon").as_ptr();
+        Icon::builder()
+            .source_embed(Some(&data.resources))
+            .source_embed_id(resources::ICON_KEYBOARD)
+            .size(Some((0, 0))) // makes the icon less blury
+            .build(&mut data.icon_enabled)?;
 
-            // A class is unique and the `RegisterClass()` function fails when
-            // we create more than one tray icon but we do not care.
-            let mut wnd_class: WNDCLASSW = mem::zeroed();
-            wnd_class.lpfnWndProc = Some(Self::wndproc);
-            wnd_class.hInstance = hinstance;
-            wnd_class.lpszClassName = class_name;
-            RegisterClassW(&wnd_class);
+        Icon::builder()
+            .source_embed(Some(&data.resources))
+            .source_embed_id(resources::ICON_KEYBOARD_DELETE)
+            .size(Some((0, 0))) // makes the icon less blury
+            .build(&mut data.icon_disabled)?;
 
-            let window = MessageOnlyWindow::new(class_name);
+        // Controls
+        MessageWindow::builder().build(&mut data.window)?;
 
-            // Set message as associated data
-            SetWindowLongPtrW(window.handle(), GWLP_USERDATA, message as _);
+        TrayNotification::builder()
+            .icon(Some(&data.icon_enabled))
+            .parent(&data.window)
+            .build(&mut data.tray)?;
 
-            // Create the tray icon
-            let mut notification_data = Self::notification_data(window.handle());
-            notification_data.uFlags = NIF_MESSAGE;
-            notification_data.uCallbackMessage = WM_USER_TRAYICON;
-            Shell_NotifyIconW(NIM_ADD, &mut notification_data);
+        Menu::builder()
+            .popup(true)
+            .parent(&data.window)
+            .build(&mut data.tray_menu)?;
 
-            Self { window }
-        }
+        MenuItem::builder()
+            .text("Disable")
+            .parent(&data.tray_menu)
+            .build(&mut data.tray_menu_disable)?;
+
+        MenuItem::builder()
+            .text("Exit")
+            .parent(&data.tray_menu)
+            .build(&mut data.tray_menu_exit)?;
+
+        let data = Rc::new(data);
+
+        let data_handler = Rc::downgrade(&data);
+        let event_handler = move |evt, _evt_data, handle| {
+            let data = data_handler.upgrade().unwrap();
+            match evt {
+                Event::OnMenuItemSelected if handle == data.tray_menu_disable => {
+                    data.toggle_disable();
+                }
+                Event::OnMenuItemSelected if handle == data.tray_menu_exit => {
+                    data.exit();
+                }
+                _ => {}
+            }
+        };
+        let handler =
+            native_windows_gui::full_bind_event_handler(&data.window.handle, event_handler);
+
+        // Use an additional low level handler, because high level handler does
+        // not support double click events for the tary icon.
+        let data_raw_handler = Rc::downgrade(&data);
+        let raw_event_handler = move |_, msg, _, lparam| {
+            let data = data_raw_handler.upgrade().unwrap();
+
+            // Let’s hope `native-windows-gui` does not change internal constants.
+            const NWG_TRAY: u32 = WM_USER + 102;
+            use winapi::um::winuser::*;
+            match (msg, lparam as _) {
+                (NWG_TRAY, WM_LBUTTONDBLCLK) => data.toggle_disable(),
+                (NWG_TRAY, WM_RBUTTONUP) => data.show_menu(),
+                _ => (),
+            }
+            None
+        };
+
+        const TRAY_HANDLER_ID: usize = 0x74726179;
+        let raw_handler = native_windows_gui::bind_raw_event_handler(
+            &data.window.handle,
+            TRAY_HANDLER_ID,
+            raw_event_handler,
+        )?;
+
+        Ok(Self {
+            data,
+            handler,
+            raw_handler,
+        })
     }
 
-    pub fn set_icon(&self, icon: HICON) {
-        let mut notification_data = Self::notification_data(self.window.handle());
-        notification_data.uFlags = NIF_ICON;
-        notification_data.hIcon = icon;
-        unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &mut notification_data);
-        }
-    }
-
-    fn notification_data(hwnd: HWND) -> NOTIFYICONDATAW {
-        unsafe {
-            let mut notification_data: NOTIFYICONDATAW = mem::zeroed();
-            notification_data.cbSize = mem::size_of_val(&notification_data) as _;
-            notification_data.hWnd = hwnd;
-            notification_data.uID = Self::message(hwnd);
-            notification_data
-        }
-    }
-
-    fn message(hwnd: HWND) -> u32 {
-        unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) as _ }
-    }
-
-    unsafe extern "system" fn wndproc(
-        hwnd: HWND,
-        msg: UINT,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        if msg == WM_USER_TRAYICON {
-            PostMessageW(ptr::null_mut(), Self::message(hwnd), wparam, lparam);
-            return 0;
-        }
-        DefWindowProcW(hwnd, msg, wparam, lparam)
+    pub fn is_enabled(&self) -> bool {
+        !self.data.state.borrow().disabled
     }
 }
