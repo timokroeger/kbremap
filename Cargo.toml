@@ -1,8 +1,9 @@
 [package]
 name = "kbremap"
-version = "1.0.0"
+description = "Custom keyboard layouts for windows"
+version = "1.1.0"
 authors = ["Timo Kröger <timokroeger93@gmail.com>"]
-edition = "2018"
+edition = "2021"
 license = "MIT/Apache-2.0"
 repository = "https://github.com/timokroeger/kbremap"
 
