@@ -29,7 +29,7 @@ pub struct Layers {
     pressed_modifiers: Vec<u16>,
 
     /// Currently pressed keys.
-    pressed_keys: HashMap<u16, Remap>,
+    pressed_keys: HashMap<u16, Option<Remap>>,
 }
 
 /// Looks for invalid references and cycles in the layer graph.
@@ -179,14 +179,12 @@ impl Layers {
         let remap = self
             .pressed_keys
             .remove(&scan_code)
-            .or_else(|| self.get_remapping_current_layer(scan_code));
+            .unwrap_or_else(|| self.get_remapping_current_layer(scan_code));
 
         self.process_modifiers(scan_code, up);
 
         if !up {
-            if let Some(remap) = remap {
-                self.pressed_keys.insert(scan_code, remap);
-            }
+            self.pressed_keys.insert(scan_code, remap);
         }
 
         remap
@@ -270,6 +268,29 @@ mod tests {
         assert_eq!(layers.get_remapping(0x20, true), Some(Character('1')));
         assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
         assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
+
+        Ok(())
+    }
+
+    #[test]
+    fn accidental_shift_lock_issue25() -> anyhow::Result<()> {
+        let config_str = r#"[layers]
+        base = [
+            { scan_code = 0x2A, layer = "shift", virtual_key = 0xA0 }, # left shift
+            { scan_code = 0xE036, layer = "shift", virtual_key = 0xA1 }, # right shift
+        ]
+        shift = []
+        "#;
+
+        let config = Config::from_toml(config_str)?;
+        let mut layers = Layers::new(&config)?;
+
+        use Remap::*;
+
+        assert_eq!(layers.get_remapping(0xE036, false), Some(VirtualKey(0xA1)));
+        assert_eq!(layers.get_remapping(0x002A, false), None);
+        assert_eq!(layers.get_remapping(0x002A, true), None);
+        assert_eq!(layers.get_remapping(0xE036, true), Some(VirtualKey(0xA1)));
 
         Ok(())
     }
