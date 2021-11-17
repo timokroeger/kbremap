@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- Option to run at system startup, configurable from the tray icon popup menu
+
 ### Fixed
 - Accidental shift lock #25
 

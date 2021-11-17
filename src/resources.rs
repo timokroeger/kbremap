@@ -7,3 +7,4 @@ pub const ICON_KEYBOARD_DELETE: u16 = 2;
 pub const MENU: u16 = 10;
 pub const MENU_EXIT: u16 = 11;
 pub const MENU_DISABLE: u16 = 12;
+pub const MENU_AUTOSTART: u16 = 13;

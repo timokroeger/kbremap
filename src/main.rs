@@ -16,6 +16,8 @@ use config::Config;
 use keyboard_hook::KeyboardHook;
 use layers::Layers;
 use tray_icon::TrayIcon;
+use wchar::*;
+use win32_wrappers::AutoStartEntry;
 use winapi::um::winuser::*;
 
 const WM_APP_TRAYICON: u32 = winapi::um::winuser::WM_APP + 873;
@@ -82,6 +84,36 @@ fn main() -> Result<()> {
         }
     };
 
+    let autostart = AutoStartEntry::new(wchz!("kbremap"));
+
+    let update_autostart = || {
+        unsafe {
+            CheckMenuItem(
+                menu,
+                resources::MENU_AUTOSTART as _,
+                if autostart.is_registered() {
+                    MF_CHECKED
+                } else {
+                    MF_UNCHECKED
+                },
+            )
+        };
+    };
+
+    update_autostart();
+
+    let toggle_autostart = || {
+        let was_checked = unsafe {
+            GetMenuState(menu, resources::MENU_AUTOSTART as _, 0) & MF_CHECKED == MF_CHECKED
+        };
+        if was_checked {
+            autostart.remove();
+        } else {
+            autostart.register();
+        }
+        update_autostart();
+    };
+
     // A dummy window handle is required to show a menu.
     let dummy_window = win32_wrappers::create_dummy_window();
 
@@ -103,6 +135,7 @@ fn main() -> Result<()> {
             match menu_selection as _ {
                 resources::MENU_EXIT => PostQuitMessage(0),
                 resources::MENU_DISABLE => toggle_enabled(),
+                resources::MENU_AUTOSTART => toggle_autostart(),
                 _ => (),
             }
         },
