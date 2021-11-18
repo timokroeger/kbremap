@@ -4,6 +4,7 @@
 
 ### Added
 - Option to run at system startup, configurable from the tray icon popup menu
+- Load configuration file from executable directory if now found in current working directory
 
 ### Fixed
 - Accidental shift lock #25
