@@ -6,19 +6,15 @@ mod keyboard_hook;
 mod layers;
 mod resources;
 mod tray_icon;
-mod win32_wrappers;
 
-use std::cell::Cell;
-use std::{fs, ptr};
+use std::fs;
 
 use anyhow::Result;
 use config::Config;
 use keyboard_hook::KeyboardHook;
 use layers::Layers;
-use tray_icon::TrayIcon;
-use winapi::um::winuser::*;
 
-const WM_APP_TRAYICON: u32 = winapi::um::winuser::WM_APP + 873;
+use crate::tray_icon::TrayIcon;
 
 /// Custom keyboard layouts for windows.
 #[derive(argh::FromArgs)]
@@ -46,13 +42,13 @@ fn main() -> Result<()> {
         unsafe { winapi::um::consoleapi::AllocConsole() };
     }
 
+    native_windows_gui::init()?;
+    let ui = TrayIcon::new()?;
+
     let mut layers = Layers::new(&config)?;
 
-    // No keys are remapped when set to `false`.
-    let active = &Cell::new(true);
-
-    let kbhook = KeyboardHook::set(move |key| {
-        if !active.get() {
+    let kbhook = KeyboardHook::set(|key| {
+        if !ui.is_enabled() {
             return None;
         }
 
@@ -60,54 +56,8 @@ fn main() -> Result<()> {
     });
     kbhook.disable_caps_lock(config.disable_caps_lock);
 
-    // UI code
-
-    // Load resources
-    let icon_enabled = win32_wrappers::icon_from_rc_numeric(resources::ICON_KEYBOARD);
-    let icon_disabled = win32_wrappers::icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
-    let menu = win32_wrappers::popupmenu_from_rc_numeric(resources::MENU);
-
-    let tray_icon = TrayIcon::new(WM_APP_TRAYICON);
-    tray_icon.set_icon(icon_enabled);
-
-    let toggle_enabled = || {
-        if active.get() {
-            active.set(false);
-            tray_icon.set_icon(icon_disabled);
-            unsafe { CheckMenuItem(menu, resources::MENU_DISABLE as _, MF_CHECKED) };
-        } else {
-            active.set(true);
-            tray_icon.set_icon(icon_enabled);
-            unsafe { CheckMenuItem(menu, resources::MENU_DISABLE as _, MF_UNCHECKED) };
-        }
-    };
-
-    // A dummy window handle is required to show a menu.
-    let dummy_window = win32_wrappers::create_dummy_window();
-
-    // Event loop required for the low-level keyboard hook and the tray icon.
-    win32_wrappers::message_loop(move |msg| match (msg.message, msg.lParam as _) {
-        (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => {
-            toggle_enabled();
-        }
-        (WM_APP_TRAYICON, WM_RBUTTONUP) => unsafe {
-            SetForegroundWindow(dummy_window.handle());
-            let menu_selection = TrackPopupMenuEx(
-                menu,
-                TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
-                msg.pt.x,
-                msg.pt.y,
-                dummy_window.handle(),
-                ptr::null_mut(),
-            );
-            match menu_selection as _ {
-                resources::MENU_EXIT => PostQuitMessage(0),
-                resources::MENU_DISABLE => toggle_enabled(),
-                _ => (),
-            }
-        },
-        _ => (),
-    });
+    // The event loop is also required for the low-level keyboard hook to work.
+    native_windows_gui::dispatch_thread_events();
 
     Ok(())
 }

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Use `native-windows-gui` crate for the tray icon menu
+
 ### Fixed
 - Accidental shift lock #25
 
