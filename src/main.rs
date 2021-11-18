@@ -8,7 +8,8 @@ mod resources;
 mod tray_icon;
 mod winapi_util;
 
-use std::fs;
+use std::path::Path;
+use std::{env, fs};
 
 use anyhow::Result;
 use config::Config;
@@ -25,6 +26,23 @@ struct CommandLineArguments {
     config: Option<String>,
 }
 
+fn load_config(config_file: &str) -> Result<Config> {
+    let mut path_buf;
+    let mut config_file = Path::new(config_file);
+
+    // Could not find the configuration file in current working directory.
+    // Check if a config file with same name exists next to our executable.
+    if !config_file.exists() && config_file.is_relative() {
+        path_buf = env::current_exe()?;
+        path_buf.pop();
+        path_buf.push(config_file);
+        config_file = path_buf.as_path();
+    }
+
+    let config_str = fs::read_to_string(config_file)?;
+    Ok(Config::from_toml(&config_str)?)
+}
+
 fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
     unsafe {
@@ -34,8 +52,7 @@ fn main() -> Result<()> {
 
     let args: CommandLineArguments = argh::from_env();
 
-    let config_str = fs::read_to_string(args.config.as_deref().unwrap_or("config.toml"))?;
-    let config = Config::from_toml(&config_str)?;
+    let config = load_config(args.config.as_deref().unwrap_or("config.toml"))?;
 
     // Spawn a console window if debug output was requested in the config and
     // if the exetable was not launched from a terminal.
