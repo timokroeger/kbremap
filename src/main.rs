@@ -6,6 +6,7 @@ mod keyboard_hook;
 mod layers;
 mod resources;
 mod tray_icon;
+mod winapi_util;
 
 use std::fs;
 
