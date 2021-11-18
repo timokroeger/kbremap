@@ -110,14 +110,14 @@ impl TrayIcon {
         let data_handler = Rc::downgrade(&data);
         let event_handler = move |evt, _evt_data, handle| {
             let data = data_handler.upgrade().unwrap();
-            match evt {
-                Event::OnMenuItemSelected if handle == data.tray_menu_disable => {
-                    data.toggle_disable();
-                }
-                Event::OnMenuItemSelected if handle == data.tray_menu_exit => {
-                    data.exit();
-                }
-                _ => {}
+            if evt != Event::OnMenuItemSelected {
+                return;
+            }
+
+            if handle == data.tray_menu_disable {
+                data.toggle_disable();
+            } else if handle == data.tray_menu_exit {
+                data.exit();
             }
         };
         let handler =
@@ -131,12 +131,17 @@ impl TrayIcon {
 
             // Let’s hope `native-windows-gui` does not change internal constants.
             const NWG_TRAY: u32 = WM_USER + 102;
+            if msg != NWG_TRAY {
+                return None;
+            }
+
             use winapi::um::winuser::*;
-            match (msg, lparam as _) {
-                (NWG_TRAY, WM_LBUTTONDBLCLK) => data.toggle_disable(),
-                (NWG_TRAY, WM_RBUTTONUP) => data.show_menu(),
+            match lparam as _ {
+                WM_LBUTTONDBLCLK => data.toggle_disable(),
+                WM_RBUTTONUP => data.show_menu(),
                 _ => (),
             }
+
             None
         };
 
