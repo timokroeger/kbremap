@@ -24,7 +24,7 @@ toml = "0.5.7"
 tracing = "0.1.29"
 tracing-appender = "0.2.0"
 tracing-subscriber = "0.3.1"
-winapi = { version = "0.3.9", features = ["consoleapi"] }
+winapi = { version = "0.3.9", features = ["consoleapi", "wincon"] }
 
 [build-dependencies]
 winres = "0.1.12"

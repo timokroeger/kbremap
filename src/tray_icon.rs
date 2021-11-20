@@ -6,7 +6,8 @@ use native_windows_gui::{
     NwgError, RawEventHandler, TrayNotification,
 };
 use winapi::um::consoleapi::*;
-use winapi::um::wincon::FreeConsole;
+use winapi::um::wincon::*;
+use winapi::um::winuser::*;
 
 use crate::resources;
 
@@ -40,7 +41,13 @@ impl TrayIconData {
             unsafe { FreeConsole() };
             self.tray_menu_debug.set_checked(false);
         } else {
-            unsafe { AllocConsole() };
+            unsafe {
+                AllocConsole();
+                let console = GetConsoleWindow();
+                let console_menu = GetSystemMenu(console, 0);
+                DeleteMenu(console_menu, SC_CLOSE as _, MF_BYCOMMAND);
+            }
+
             self.tray_menu_debug.set_checked(true);
         }
     }
