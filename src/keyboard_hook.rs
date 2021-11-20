@@ -102,10 +102,10 @@ pub struct KeyEvent {
 impl Display for KeyEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
-            "{} (sc: {:#06X}, vk: {:#04X})",
-            if self.up { '↑' } else { '↓' },
+            "{{ sc: {:#06X}, vk: {:#04X}, {} }}",
             self.scan_code,
-            self.virtual_key
+            self.virtual_key,
+            if self.up { "up  " } else { "down" }
         ))
     }
 }
@@ -152,11 +152,12 @@ unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM)
     let injected = hook_lparam.flags & LLKHF_INJECTED != 0;
     let key = KeyEvent::from_hook_lparam(hook_lparam);
 
+    tracing::debug!(%key, injected);
+
     // `SendInput()` internally calls the hook function. Filter out injected events
     // to prevent recursion and potential stack overflows if our remapping logic
     // sent the injected event.
     if injected {
-        println!("{} injected", key);
         return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
     }
 
@@ -183,27 +184,26 @@ unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM)
         state.hook.as_mut().unwrap()(key)
     });
 
-    print!("{} ", key);
     if remap.is_none() {
-        println!("forwarded");
+        tracing::debug!("forwarded");
         return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
     }
 
     match remap.unwrap() {
         Remap::Ignore => {
-            println!("ignored");
+            tracing::debug!("ignored");
         }
         Remap::Character(c) => {
             if let Some(virtual_key) = get_virtual_key(c) {
-                println!("remapped to `{}` as virtual key", c);
+                tracing::debug!("remapped to `{}` as virtual key", c);
                 send_key(KeyEvent { virtual_key, ..key });
             } else {
-                println!("remapped to `{}` as unicode input", c);
+                tracing::debug!("remapped to `{}` as unicode input", c);
                 send_unicode(key, c);
             }
         }
         Remap::VirtualKey(virtual_key) => {
-            println!("remapped to virtual key {:#04X}", virtual_key);
+            tracing::debug!("remapped to virtual key {:#04X}", virtual_key);
             send_key(KeyEvent { virtual_key, ..key });
         }
     }

@@ -13,6 +13,7 @@ use anyhow::Result;
 use config::Config;
 use keyboard_hook::KeyboardHook;
 use layers::Layers;
+use tracing::Level;
 
 use crate::tray_icon::TrayIcon;
 
@@ -30,6 +31,15 @@ fn main() -> Result<()> {
         use winapi::um::wincon::*;
         AttachConsole(ATTACH_PARENT_PROCESS);
     };
+
+    let (stdout_nb, _guard) = tracing_appender::non_blocking(std::io::stdout());
+    tracing_subscriber::fmt()
+        .with_writer(stdout_nb)
+        .with_max_level(Level::DEBUG)
+        .without_time()
+        .with_level(false)
+        .with_target(false)
+        .init();
 
     let args: CommandLineArguments = argh::from_env();
 
