@@ -21,7 +21,10 @@ native-windows-gui = { version = "1.0.12", features = [
 ] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.5.7"
-winapi = { version = "0.3.9", features = ["consoleapi"] }
+tracing = "0.1.29"
+tracing-appender = "0.2.0"
+tracing-subscriber = "0.3.1"
+winapi = { version = "0.3.9", features = ["consoleapi", "wincon"] }
 
 [build-dependencies]
 winres = "0.1.12"

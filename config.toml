@@ -1,9 +1,5 @@
 # Example Dvorak layout configuration with comments.
 
-# Set to `true` to spawn a console window with debug output.
-# Debug output is always shown when executed from a terminal even when set to false.
-debug_output = false
-
 # Set to `true` to disable caps lock.
 # Useful when the caps lock is remapped but the caps lock state is toggled externally
 # for example by RDP or other programs running with admin rights.

@@ -9,9 +9,6 @@ use crate::keyboard_hook::Remap;
 #[derive(Debug, Deserialize)]
 pub struct Config {
     #[serde(default)]
-    pub debug_output: bool,
-
-    #[serde(default)]
     pub disable_caps_lock: bool,
 
     layers: HashMap<String, Vec<Mapping>>,

@@ -7,6 +7,10 @@
 
 ### Fixed
 - Accidental shift lock #25
+- A problem where windows disabled the keyboard hook when debug output was enabled
+
+### Removed
+- `debug_output` configuration. Debug output can be toggled from the tray icon menu
 
 ## [1.1.0] - 2021-11-17
 
