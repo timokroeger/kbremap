@@ -5,6 +5,8 @@ use native_windows_gui::{
     EmbedResource, Event, EventHandler, GlobalCursor, Icon, Menu, MenuItem, MessageWindow,
     NwgError, RawEventHandler, TrayNotification,
 };
+use winapi::um::consoleapi::*;
+use winapi::um::wincon::FreeConsole;
 
 use crate::resources;
 
@@ -21,6 +23,7 @@ struct TrayIconData {
     window: MessageWindow,
     tray: TrayNotification,
     tray_menu: Menu,
+    tray_menu_debug: MenuItem,
     tray_menu_disable: MenuItem,
     tray_menu_exit: MenuItem,
     state: RefCell<State>,
@@ -30,6 +33,16 @@ impl TrayIconData {
     fn show_menu(&self) {
         let (x, y) = GlobalCursor::position();
         self.tray_menu.popup(x, y);
+    }
+
+    fn toggle_debug(&self) {
+        if self.tray_menu_debug.checked() {
+            unsafe { FreeConsole() };
+            self.tray_menu_debug.set_checked(false);
+        } else {
+            unsafe { AllocConsole() };
+            self.tray_menu_debug.set_checked(true);
+        }
     }
 
     fn toggle_disable(&self) {
@@ -64,7 +77,7 @@ impl Drop for TrayIcon {
 }
 
 impl TrayIcon {
-    pub fn new() -> Result<Self, NwgError> {
+    pub fn new(console_available: bool) -> Result<Self, NwgError> {
         let mut data = TrayIconData::default();
 
         // Resources
@@ -96,6 +109,15 @@ impl TrayIcon {
             .build(&mut data.tray_menu)?;
 
         MenuItem::builder()
+            .text("Show debug output")
+            .parent(&data.tray_menu)
+            .build(&mut data.tray_menu_debug)?;
+        if console_available {
+            data.tray_menu_debug.set_enabled(false);
+            data.tray_menu_debug.set_checked(true);
+        }
+
+        MenuItem::builder()
             .text("Disable")
             .parent(&data.tray_menu)
             .build(&mut data.tray_menu_disable)?;
@@ -114,7 +136,9 @@ impl TrayIcon {
                 return;
             }
 
-            if handle == data.tray_menu_disable {
+            if handle == data.tray_menu_debug {
+                data.toggle_debug();
+            } else if handle == data.tray_menu_disable {
                 data.toggle_disable();
             } else if handle == data.tray_menu_exit {
                 data.exit();

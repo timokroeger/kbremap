@@ -27,9 +27,9 @@ struct CommandLineArguments {
 
 fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
-    unsafe {
+    let console_available = unsafe {
         use winapi::um::wincon::*;
-        AttachConsole(ATTACH_PARENT_PROCESS);
+        AttachConsole(ATTACH_PARENT_PROCESS) != 0
     };
 
     let (stdout_nb, _guard) = tracing_appender::non_blocking(std::io::stdout());
@@ -46,14 +46,8 @@ fn main() -> Result<()> {
     let config_str = fs::read_to_string(args.config.as_deref().unwrap_or("config.toml"))?;
     let config = Config::from_toml(&config_str)?;
 
-    // Spawn a console window if debug output was requested in the config and
-    // if the exetable was not launched from a terminal.
-    if config.debug_output {
-        unsafe { winapi::um::consoleapi::AllocConsole() };
-    }
-
     native_windows_gui::init()?;
-    let ui = TrayIcon::new()?;
+    let ui = TrayIcon::new(console_available)?;
 
     let mut layers = Layers::new(&config)?;
 
