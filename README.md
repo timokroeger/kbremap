@@ -3,7 +3,7 @@
 ```
 Usage: kbremap.exe [--config <config>]
 
-Custom keyboard layouts for windows. Fully configurable for quick prototyping of new layouts.
+Custom keyboard layouts for windows.
 
 Options:
   --config          path to configuration file (default: `config.toml`)
@@ -11,13 +11,15 @@ Options:
 ```
 
 Configuration loosely inspired by custom keyboard firmware like [QMK](https://qmk.fm/).
+Comments in the `config.toml` file explain how to configure the Dvorak layout.
 
 ## Features
 * Remap any key to any other key
-* Supports Unicode characters, including most Emojis 😊
-* Support for any number of virtual layers
-* Click on tray icon enables or bypasses the layout
+* Supports Unicode characters, including most Emojis ⌨️🔥
+* Virtual layers support (e.g. right alt to overlay arrow keys for navigation)
 * No installation or administrator rights required
+* Double-click on tray icon disables the layout
+* Option to run at system startup
 * Uses the windows low-level keyboard hook for maximum compatibility
 
 ## Features `neo.toml` configuration
@@ -27,6 +29,7 @@ Configuration loosely inspired by custom keyboard firmware like [QMK](https://qm
 
 ## Known issues
 * Layer locking not supported
+* Compose key not avaible (yet)
 * Layer "base" must exists in the configuration
 
 ## License

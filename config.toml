@@ -3,6 +3,7 @@
 # Set to `true` to disable caps lock.
 # Useful when the caps lock is remapped but the caps lock state is toggled externally
 # for example by RDP or other programs running with admin rights.
+# The Dvorak layout does not overwrite the caps lock key. Keep the default caps lock behavoir.
 disable_caps_lock = false
 
 [layers]

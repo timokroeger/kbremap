@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2021-11-21
+
 ### Added
 - Option to run at system startup, configurable from the tray icon popup menu
 - Load configuration file from executable directory if now found in current working directory
