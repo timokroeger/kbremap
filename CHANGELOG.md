@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+- Option to run at system startup, configurable from the tray icon popup menu
+- Load configuration file from executable directory if now found in current working directory
+
 ### Changed
 - Use `native-windows-gui` crate for the tray icon menu
 

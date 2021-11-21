@@ -5,15 +5,26 @@ use native_windows_gui::{
     EmbedResource, Event, EventHandler, GlobalCursor, Icon, Menu, MenuItem, MessageWindow,
     NwgError, RawEventHandler, TrayNotification,
 };
+use wchar::*;
 use winapi::um::consoleapi::*;
 use winapi::um::wincon::*;
 use winapi::um::winuser::*;
 
 use crate::resources;
+use crate::winapi_util::AutoStartEntry;
 
-#[derive(Default)]
 struct State {
     disabled: bool,
+    autostart: AutoStartEntry<'static>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            disabled: Default::default(),
+            autostart: AutoStartEntry::new(wchz!("kbremap")),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -24,6 +35,7 @@ struct TrayIconData {
     window: MessageWindow,
     tray: TrayNotification,
     tray_menu: Menu,
+    tray_menu_autostart: MenuItem,
     tray_menu_debug: MenuItem,
     tray_menu_disable: MenuItem,
     tray_menu_exit: MenuItem,
@@ -34,6 +46,24 @@ impl TrayIconData {
     fn show_menu(&self) {
         let (x, y) = GlobalCursor::position();
         self.tray_menu.popup(x, y);
+    }
+
+    fn update_autostart(&self) {
+        let state = self.state.borrow();
+        self.tray_menu_autostart
+            .set_checked(state.autostart.is_registered())
+    }
+
+    fn toggle_autostart(&self) {
+        let state = self.state.borrow();
+
+        if self.tray_menu_autostart.checked() {
+            state.autostart.remove();
+        } else {
+            state.autostart.register();
+        }
+
+        self.update_autostart();
     }
 
     fn toggle_debug(&self) {
@@ -54,6 +84,7 @@ impl TrayIconData {
 
     fn toggle_disable(&self) {
         let mut state = self.state.borrow_mut();
+
         if state.disabled {
             state.disabled = false;
             self.tray.set_icon(&self.icon_enabled);
@@ -116,6 +147,12 @@ impl TrayIcon {
             .build(&mut data.tray_menu)?;
 
         MenuItem::builder()
+            .text("Run at system start")
+            .parent(&data.tray_menu)
+            .build(&mut data.tray_menu_autostart)?;
+        data.update_autostart();
+
+        MenuItem::builder()
             .text("Show debug output")
             .parent(&data.tray_menu)
             .build(&mut data.tray_menu_debug)?;
@@ -143,7 +180,9 @@ impl TrayIcon {
                 return;
             }
 
-            if handle == data.tray_menu_debug {
+            if handle == data.tray_menu_autostart {
+                data.toggle_autostart();
+            } else if handle == data.tray_menu_debug {
                 data.toggle_debug();
             } else if handle == data.tray_menu_disable {
                 data.toggle_disable();
