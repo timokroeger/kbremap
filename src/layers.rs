@@ -176,18 +176,26 @@ impl Layers {
     /// of pressed modifer keys matches the layer's activation sequence. This
     /// is true even when modifier keys are removed from the set randomly.
     fn active_layer_idx(&self) -> usize {
-        for modifier_sequence in &self.modifier_sequences {
-            let seq = &modifier_sequence.sequence;
-            if seq.len() > self.pressed_modifiers.len() {
-                continue;
-            }
+        // Split off the last sequence when matching.
+        // It always targets the base layer and has a modifier sequence of length 0.
+        let (base_seq, modifier_seqs) = self.modifier_sequences.split_last().unwrap();
 
-            if &self.pressed_modifiers[..seq.len()] == seq {
-                return modifier_sequence.target_layer;
+        for idx in 0..self.pressed_modifiers.len() {
+            for modifier_seq in modifier_seqs {
+                let seq = &modifier_seq.sequence;
+
+                debug_assert!(seq.len() > 0);
+                if idx + seq.len() > self.pressed_modifiers.len() {
+                    continue;
+                }
+
+                if &self.pressed_modifiers[idx..idx + seq.len()] == seq {
+                    return modifier_seq.target_layer;
+                }
             }
         }
 
-        unreachable!();
+        return base_seq.target_layer;
     }
 
     /// Processes modifers to update select the correct layer.
@@ -291,7 +299,7 @@ mod tests {
         assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
         assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
 
-        // L2 -> XX -> L1
+        // L2 -> XX (L2 still active) -> L1
         assert_eq!(layers.get_remapping(0x12, false), Some(Ignore));
         assert_eq!(layers.get_remapping(0x20, false), Some(Character('2')));
         assert_eq!(layers.get_remapping(0x20, true), Some(Character('2')));
@@ -348,5 +356,48 @@ mod tests {
 
         let config = Config::from_toml(config_str).unwrap();
         assert!(Layers::new(&config).is_err());
+    }
+
+    #[test]
+    fn masked_modifier_on_base_layer() -> anyhow::Result<()> {
+        let config_str = r#"[layers]
+        base = [{ scan_code = 0x0A, layer = "a" }, { scan_code = 0x0B, layer = "b" }]
+        a = [{ scan_code = 0x0C, layer = "c" }]
+        b = [{ scan_code = 0xBB, characters = "B" }]
+        c = [{ scan_code = 0xCC, characters = "C" }] # not reachable from base
+        "#;
+
+        let config = Config::from_toml(config_str)?;
+        let mut layers = Layers::new(&config)?;
+
+        use Remap::*;
+
+        // "B" does not exist on base layer
+        assert_eq!(layers.get_remapping(0xBB, false), None);
+        assert_eq!(layers.get_remapping(0xBB, true), None);
+
+        // Layer c should not be activated from the base layer
+        assert_eq!(layers.get_remapping(0x0C, false), None);
+        assert_eq!(layers.get_remapping(0xCC, false), None);
+        assert_eq!(layers.get_remapping(0xCC, true), None);
+
+        // But Layer b should be activated even when modifier for layer c pressed.
+        assert_eq!(layers.get_remapping(0x0B, false), Some(Ignore));
+        assert_eq!(layers.get_remapping(0xBB, false), Some(Character('B')));
+        assert_eq!(layers.get_remapping(0xBB, true), Some(Character('B')));
+
+        // Release layer c key (it was never activated) and make sure we are still on layer b.
+        assert_eq!(layers.get_remapping(0x0C, true), None);
+        assert_eq!(layers.get_remapping(0xBB, false), Some(Character('B')));
+        assert_eq!(layers.get_remapping(0xBB, true), Some(Character('B')));
+
+        // Release leayer b key
+        assert_eq!(layers.get_remapping(0x0B, true), Some(Ignore));
+
+        // "B" does not exist on base layer
+        assert_eq!(layers.get_remapping(0xBB, false), None);
+        assert_eq!(layers.get_remapping(0xBB, true), None);
+
+        Ok(())
     }
 }
