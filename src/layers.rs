@@ -349,4 +349,15 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn cyclic_layers() {
+        let config_str = r#"[layers]
+        base = [{ scan_code = 0x0001, layer = "overlay" }]
+        overlay = [{ scan_code = 0x0002, layer = "base" }]
+        "#;
+
+        let config = Config::from_toml(config_str).unwrap();
+        assert!(Layers::new(&config).is_err());
+    }
 }
