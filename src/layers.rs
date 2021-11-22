@@ -61,10 +61,11 @@ fn check_layer_graph(
     finished: &mut Vec<usize>,
 ) -> Result<()> {
     visited.push(layer_idx);
-    for modifier in modifiers
-        .iter()
-        .filter(|modifier| modifier.from == layer_idx)
-    {
+    for modifier in modifiers {
+        if modifier.from != layer_idx {
+            continue;
+        }
+
         ensure!(
             !visited.contains(&modifier.to) || finished.contains(&modifier.to),
             "Cycle in layer graph: scan_code={:#06X}",
@@ -84,10 +85,11 @@ fn build_modifier_sequences(
     layer_idx: usize,
     modifier_sequences: &mut Vec<ModifierSequence>,
 ) {
-    for modifier in modifiers
-        .iter()
-        .filter(|modifier| modifier.from == layer_idx)
-    {
+    for modifier in modifiers {
+        if modifier.from != layer_idx {
+            continue;
+        }
+
         // Find the sequences to this layer.
         let mut new_seqs: Vec<ModifierSequence> = modifier_sequences
             .iter()
@@ -119,17 +121,11 @@ impl Layers {
         let mut modifiers = Vec::new();
         for (i, layer_to) in config.layer_names().enumerate() {
             for (j, layer_from) in config.layer_names().enumerate() {
-                let connecting_modifiers =
-                    config
-                        .layer_modifiers(layer_from)
-                        .filter_map(|(scan_code, target_layer)| {
-                            if target_layer == layer_to {
-                                Some(scan_code)
-                            } else {
-                                None
-                            }
-                        });
-                for scan_code in connecting_modifiers {
+                for (scan_code, target_layer) in config.layer_modifiers(layer_from) {
+                    if target_layer != layer_to {
+                        continue;
+                    }
+
                     modifiers.push(LayerModifier {
                         scan_code,
                         from: j,
