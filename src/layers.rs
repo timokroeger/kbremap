@@ -174,12 +174,12 @@ impl Layers {
         })
     }
 
-    /// Returns the currently active layer or `None` when no layer is active.
+    /// Returns the index of the currently active layer.
     ///
     /// A layer is considered to be active when an chronologically ordered set
     /// of pressed modifer keys matches the layer's activation sequence. This
     /// is true even when modifier keys are removed from the set randomly.
-    fn active_layer(&self) -> Option<&Layer> {
+    fn active_layer_idx(&self) -> usize {
         for modifier_sequence in &self.modifier_sequences {
             let seq = &modifier_sequence.sequence;
             if seq.len() > self.pressed_modifiers.len() {
@@ -187,18 +187,11 @@ impl Layers {
             }
 
             if &self.pressed_modifiers[..seq.len()] == seq {
-                return Some(&self.layers[modifier_sequence.target_layer]);
+                return modifier_sequence.target_layer;
             }
         }
 
-        None
-    }
-
-    fn get_remapping_current_layer(&mut self, scan_code: u16) -> Option<Remap> {
-        match self.active_layer() {
-            Some(layer) => layer.mappings.get(&scan_code).copied(),
-            None => Some(Remap::Ignore),
-        }
+        unreachable!();
     }
 
     /// Processes modifers to update select the correct layer.
@@ -228,11 +221,13 @@ impl Layers {
         // send the correct repeated key press or key up event.
         // If we do not track active key presses the key down and key up events
         // may not be the same if the layer has changed in between.
-        // When the key is not pressed, get the mapping from the current layer.
-        let remap = self
-            .pressed_keys
-            .remove(&scan_code)
-            .unwrap_or_else(|| self.get_remapping_current_layer(scan_code));
+        // When the key is not pressed, get the mapping from the active layer.
+        let remap = self.pressed_keys.remove(&scan_code).unwrap_or_else(|| {
+            self.layers[self.active_layer_idx()]
+                .mappings
+                .get(&scan_code)
+                .copied()
+        });
 
         self.process_modifiers(scan_code, up);
 
