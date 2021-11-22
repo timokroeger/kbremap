@@ -10,20 +10,41 @@ use crate::keyboard_hook::Remap;
 /// Mapping table for a virtual keyboard layer.
 #[derive(Debug)]
 struct Layer {
+    name: String,
     mappings: HashMap<u16, Remap>,
+}
 
-    /// Sequences of modifier keys that activate this layer.
-    activation_sequences: Vec<Vec<u16>>,
+/// A modifier key changes the active layer when pressed.
+#[derive(Debug)]
+struct LayerModifier {
+    scan_code: u16,
+    from: usize,
+    to: usize,
+}
+
+/// Sequence of pressed modifiers that activate a layer.
+#[derive(Debug, Clone)]
+struct ModifierSequence {
+    target_layer: usize,
+    sequence: Vec<u16>,
 }
 
 /// Collection of virtual keyboard layers and logic to switch between them
 /// depending on which modifier keys are pressed.
 #[derive(Debug)]
 pub struct Layers {
+    /// Nodes in the layer graph.
     layers: Vec<Layer>,
 
-    /// Keys used for layer switching.
-    modifiers: HashSet<u16>,
+    /// Edges in the layer graph.
+    modifiers: Vec<LayerModifier>,
+
+    /// Set of unique scan codes used for layer switching.
+    modifiers_scan_codes: Vec<u16>,
+
+    /// Describes how layers are activated.
+    /// Rebuilt when the "base" layer changes.
+    modifier_sequences: Vec<ModifierSequence>,
 
     /// Currently pressed layer modifiers keys.
     pressed_modifiers: Vec<u16>,
@@ -32,6 +53,7 @@ pub struct Layers {
     pressed_keys: HashMap<u16, Option<Remap>>,
 }
 
+// TOOD: replace
 /// Looks for invalid references and cycles in the layer graph.
 fn check_layer_graph<'a, 'b>(
     layer_name: &'a str,
@@ -58,69 +80,97 @@ fn check_layer_graph<'a, 'b>(
     Ok(())
 }
 
-/// Traverses the graph starting at the base layer and stores path (scan code
-/// of each edge) to a layer as activation sequence for that layer.
-fn build_activation_sequences<'a, 'b>(
-    layer: &'a str,
-    layer_graph: &'b HashMap<&str, Vec<(u16, &'a str)>>,
-    activation_sequences: &'b mut HashMap<&'a str, Vec<Vec<u16>>>,
+/// Traverses the graph starting at the layer specified by `layer_idx` and
+/// stores the path (scan code of each edge) to a layer as modifier sequence
+/// for that layer.
+fn build_modifier_sequences(
+    layer_idx: usize,
+    modifiers: &[LayerModifier],
+    modifier_sequences: &mut Vec<ModifierSequence>,
 ) {
-    let our_seqs = activation_sequences[layer].clone();
-    for (scan_code, target_layer) in &layer_graph[layer] {
-        let target_seqs = activation_sequences.entry(target_layer).or_default();
-        for mut seq in our_seqs.iter().cloned() {
-            seq.push(*scan_code);
-            target_seqs.push(seq);
+    println!("build_modifier_sequences({})", layer_idx);
+    for modifier in modifiers
+        .iter()
+        .filter(|modifier| modifier.from == layer_idx)
+    {
+        println!("  modifier {:?}", modifier);
+        // Find the sequences to this layer.
+        let mut new_seqs: Vec<ModifierSequence> = modifier_sequences
+            .iter()
+            .filter(|modifier_sequence| modifier_sequence.target_layer == layer_idx)
+            .cloned()
+            .collect();
+
+        // Append this modifier to the existing sequences
+        for modifier_seq in &mut new_seqs {
+            modifier_seq.sequence.push(modifier.scan_code);
+            modifier_seq.target_layer = modifier.to;
         }
 
-        build_activation_sequences(target_layer, layer_graph, activation_sequences);
+        modifier_sequences.extend(new_seqs);
+
+        build_modifier_sequences(modifier.to, modifiers, modifier_sequences);
     }
 }
 
 impl Layers {
     pub fn new(config: &Config) -> Result<Layers> {
         // Virtual keyboard layer activation can be viewed as graph where layers
-        // are nodes and layer action keys are egdes.
-        let mut layer_graph: HashMap<&str, Vec<(u16, &str)>> = HashMap::new();
-        for layer_name in config.layer_names() {
-            layer_graph.insert(layer_name, config.layer_modifiers(layer_name).collect());
-        }
+        // are nodes and modifiers (layer change keys) are egdes.
+        let layers = Vec::from_iter(config.layer_names().map(|layer_name| Layer {
+            name: String::from(layer_name),
+            mappings: config.layer_mappings(layer_name),
+        }));
 
-        // TODO: Smart way to figure out the base layer.
-
-        // Layer graph validation
-        let mut visited = HashSet::new();
-        let mut finished = HashSet::new();
-        check_layer_graph("base", &layer_graph, &mut visited, &mut finished)?;
-        for layer_name in config.layer_names() {
-            if !finished.contains(layer_name) {
-                println!("Warning: Unused layer {:?}", layer_name);
+        let mut modifiers = Vec::new();
+        for (i, layer_to) in config.layer_names().enumerate() {
+            for (j, layer_from) in config.layer_names().enumerate() {
+                let connecting_modifiers =
+                    config
+                        .layer_modifiers(layer_from)
+                        .filter_map(|(scan_code, target_layer)| {
+                            if target_layer == layer_to {
+                                Some(scan_code)
+                            } else {
+                                None
+                            }
+                        });
+                for scan_code in connecting_modifiers {
+                    modifiers.push(LayerModifier {
+                        scan_code,
+                        from: j,
+                        to: i,
+                    });
+                }
             }
         }
 
-        let mut activation_sequences = HashMap::new();
-        activation_sequences.insert("base", vec![Vec::new()]);
-        build_activation_sequences("base", &layer_graph, &mut activation_sequences);
+        // TODO: graph validation
 
         // Get a set of all modifiers.
-        let modifiers = activation_sequences
-            .values()
-            .flatten()
-            .flatten()
-            .copied()
-            .collect();
+        let mut modifiers_scan_codes =
+            Vec::from_iter(modifiers.iter().map(|modifier| modifier.scan_code));
+        modifiers_scan_codes.dedup();
 
-        let mut layers = Vec::new();
-        for (layer_name, activation_sequences) in activation_sequences {
-            layers.push(Layer {
-                mappings: config.layer_mappings(layer_name),
-                activation_sequences,
-            });
-        }
+        // TODO: Smart way to figure out the base layer.
+        // Build modifier sequences for layer activation
+        let base_idx = layers
+            .iter()
+            .position(|layer| layer.name == "base")
+            .expect("Layer \"base\" not found");
+        let mut modifier_sequences = Vec::from([ModifierSequence {
+            target_layer: base_idx,
+            sequence: Vec::new(),
+        }]);
+        build_modifier_sequences(base_idx, &modifiers, &mut modifier_sequences);
+        modifier_sequences
+            .sort_by_key(|modifier_sequence| std::cmp::Reverse(modifier_sequence.sequence.len()));
 
         Ok(Layers {
             layers,
             modifiers,
+            modifiers_scan_codes,
+            modifier_sequences,
             pressed_modifiers: Vec::new(),
             pressed_keys: HashMap::new(),
         })
@@ -132,9 +182,14 @@ impl Layers {
     /// of pressed modifer keys matches the layer's activation sequence. This
     /// is true even when modifier keys are removed from the set randomly.
     fn active_layer(&self) -> Option<&Layer> {
-        for layer in &self.layers {
-            if layer.activation_sequences.contains(&self.pressed_modifiers) {
-                return Some(layer);
+        for modifier_sequence in &self.modifier_sequences {
+            let seq = &modifier_sequence.sequence;
+            if seq.len() > self.pressed_modifiers.len() {
+                continue;
+            }
+
+            if &self.pressed_modifiers[..seq.len()] == seq {
+                return Some(&self.layers[modifier_sequence.target_layer]);
             }
         }
 
@@ -150,7 +205,7 @@ impl Layers {
 
     /// Processes modifers to update select the correct layer.
     fn process_modifiers(&mut self, scan_code: u16, up: bool) {
-        if !self.modifiers.contains(&scan_code) {
+        if !self.modifiers_scan_codes.contains(&scan_code) {
             return;
         }
 
@@ -252,8 +307,8 @@ mod tests {
         assert_eq!(layers.get_remapping(0x20, false), Some(Character('2')));
         assert_eq!(layers.get_remapping(0x20, true), Some(Character('2')));
         assert_eq!(layers.get_remapping(0x11, false), None);
-        assert_eq!(layers.get_remapping(0x20, false), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x20, false), Some(Character('2')));
+        assert_eq!(layers.get_remapping(0x20, true), Some(Character('2')));
         assert_eq!(layers.get_remapping(0x12, true), Some(Ignore));
         assert_eq!(layers.get_remapping(0x20, false), Some(Character('1')));
         assert_eq!(layers.get_remapping(0x20, true), Some(Character('1')));
