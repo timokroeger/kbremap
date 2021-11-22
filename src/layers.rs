@@ -1,8 +1,8 @@
 //! Remapping and layer switching logic.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{ensure, Result};
 
 use crate::config::Config;
 use crate::keyboard_hook::Remap;
@@ -53,30 +53,26 @@ pub struct Layers {
     pressed_keys: HashMap<u16, Option<Remap>>,
 }
 
-// TOOD: replace
 /// Looks for invalid references and cycles in the layer graph.
-fn check_layer_graph<'a, 'b>(
-    layer_name: &'a str,
-    layer_graph: &'b HashMap<&str, Vec<(u16, &'a str)>>,
-    visited: &'b mut HashSet<&'a str>,
-    finished: &'b mut HashSet<&'a str>,
+fn check_layer_graph(
+    modifiers: &[LayerModifier],
+    layer_idx: usize,
+    visited: &mut Vec<usize>,
+    finished: &mut Vec<usize>,
 ) -> Result<()> {
-    let layer = layer_graph
-        .get(layer_name)
-        .context(format!("Invalid layer reference {:?}", layer_name))?;
-    visited.insert(layer_name);
-    for (scan_code, target_layer) in layer {
+    visited.push(layer_idx);
+    for modifier in modifiers
+        .iter()
+        .filter(|modifier| modifier.from == layer_idx)
+    {
         ensure!(
-            !visited.contains(target_layer) || finished.contains(target_layer),
-            "Cycle in layer graph: scan_code={:#06X}, layer={:?}, target_layer={:?}",
-            scan_code,
-            layer_name,
-            target_layer
+            !visited.contains(&modifier.to) || finished.contains(&modifier.to),
+            "Cycle in layer graph: scan_code={:#06X}",
+            modifier.scan_code,
         );
-
-        check_layer_graph(target_layer, layer_graph, visited, finished)?;
+        check_layer_graph(modifiers, modifier.to, visited, finished)?;
     }
-    finished.insert(layer_name);
+    finished.push(layer_idx);
     Ok(())
 }
 
@@ -84,16 +80,14 @@ fn check_layer_graph<'a, 'b>(
 /// stores the path (scan code of each edge) to a layer as modifier sequence
 /// for that layer.
 fn build_modifier_sequences(
-    layer_idx: usize,
     modifiers: &[LayerModifier],
+    layer_idx: usize,
     modifier_sequences: &mut Vec<ModifierSequence>,
 ) {
-    println!("build_modifier_sequences({})", layer_idx);
     for modifier in modifiers
         .iter()
         .filter(|modifier| modifier.from == layer_idx)
     {
-        println!("  modifier {:?}", modifier);
         // Find the sequences to this layer.
         let mut new_seqs: Vec<ModifierSequence> = modifier_sequences
             .iter()
@@ -109,7 +103,7 @@ fn build_modifier_sequences(
 
         modifier_sequences.extend(new_seqs);
 
-        build_modifier_sequences(modifier.to, modifiers, modifier_sequences);
+        build_modifier_sequences(modifiers, modifier.to, modifier_sequences);
     }
 }
 
@@ -145,24 +139,28 @@ impl Layers {
             }
         }
 
-        // TODO: graph validation
-
-        // Get a set of all modifiers.
-        let mut modifiers_scan_codes =
-            Vec::from_iter(modifiers.iter().map(|modifier| modifier.scan_code));
-        modifiers_scan_codes.dedup();
-
         // TODO: Smart way to figure out the base layer.
         // Build modifier sequences for layer activation
         let base_idx = layers
             .iter()
             .position(|layer| layer.name == "base")
             .expect("Layer \"base\" not found");
+
+        // Layer graph validation
+        let mut visited = Vec::new();
+        let mut finished = Vec::new();
+        check_layer_graph(&modifiers, base_idx, &mut visited, &mut finished)?;
+
+        // Get a set of all modifiers.
+        let mut modifiers_scan_codes =
+            Vec::from_iter(modifiers.iter().map(|modifier| modifier.scan_code));
+        modifiers_scan_codes.dedup();
+
         let mut modifier_sequences = Vec::from([ModifierSequence {
             target_layer: base_idx,
             sequence: Vec::new(),
         }]);
-        build_modifier_sequences(base_idx, &modifiers, &mut modifier_sequences);
+        build_modifier_sequences(&modifiers, base_idx, &mut modifier_sequences);
         modifier_sequences
             .sort_by_key(|modifier_sequence| std::cmp::Reverse(modifier_sequence.sequence.len()));
 
