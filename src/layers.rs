@@ -29,6 +29,36 @@ struct ModifierSequence {
     sequence: Vec<u16>,
 }
 
+struct MatchingModifierSequences<'a> {
+    base_layer_idx: Option<usize>,
+    modifier_sequences: &'a [ModifierSequence],
+    pressed_modifers: &'a [u16],
+}
+
+impl<'a> Iterator for MatchingModifierSequences<'a> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for idx in 0..self.pressed_modifers.len() {
+            for modifier_seq in self.modifier_sequences {
+                let seq = &modifier_seq.sequence;
+
+                debug_assert!(seq.len() > 0);
+                if idx + seq.len() > self.pressed_modifers.len() {
+                    continue;
+                }
+
+                if &self.pressed_modifers[idx..idx + seq.len()] == seq {
+                    self.pressed_modifers = &self.pressed_modifers[idx + seq.len()..];
+                    return Some(modifier_seq.target_layer);
+                }
+            }
+        }
+
+        return self.base_layer_idx.take();
+    }
+}
+
 /// Collection of virtual keyboard layers and logic to switch between them
 /// depending on which modifier keys are pressed.
 #[derive(Debug)]
@@ -48,6 +78,9 @@ pub struct Layers {
 
     /// Currently pressed layer modifiers keys.
     pressed_modifiers: Vec<u16>,
+
+    // Currently active layer.
+    active_layer: usize,
 
     /// Currently pressed keys.
     pressed_keys: HashMap<u16, Option<Remap>>,
@@ -166,40 +199,32 @@ impl Layers {
             modifiers_scan_codes,
             modifier_sequences,
             pressed_modifiers: Vec::new(),
+            active_layer: base_idx,
             pressed_keys: HashMap::new(),
         })
     }
 
-    /// Returns the index of the currently active layer.
+    /// Returns iterator over the index of the layers with matching modifier sequences.
     ///
     /// A layer is considered to be active when an chronologically ordered set
     /// of pressed modifer keys matches the layer's activation sequence. This
     /// is true even when modifier keys are removed from the set randomly.
-    fn active_layer_idx(&self) -> usize {
+    fn match_modifier_sequences<'a>(
+        &'a self,
+        pressed_modifers: &'a [u16],
+    ) -> MatchingModifierSequences<'a> {
         // Split off the last sequence when matching.
         // It always targets the base layer and has a modifier sequence of length 0.
-        let (base_seq, modifier_seqs) = self.modifier_sequences.split_last().unwrap();
+        let (base_seq, modifier_sequences) = self.modifier_sequences.split_last().unwrap();
 
-        for idx in 0..self.pressed_modifiers.len() {
-            for modifier_seq in modifier_seqs {
-                let seq = &modifier_seq.sequence;
-
-                debug_assert!(seq.len() > 0);
-                if idx + seq.len() > self.pressed_modifiers.len() {
-                    continue;
-                }
-
-                if &self.pressed_modifiers[idx..idx + seq.len()] == seq {
-                    return modifier_seq.target_layer;
-                }
-            }
+        MatchingModifierSequences {
+            base_layer_idx: Some(base_seq.target_layer),
+            modifier_sequences,
+            pressed_modifers,
         }
-
-        return base_seq.target_layer;
     }
 
-    /// Processes modifers to update select the correct layer.
-    fn process_modifiers(&mut self, scan_code: u16, up: bool) {
+    fn update_modifiers(&mut self, scan_code: u16, up: bool) {
         if !self.modifiers_scan_codes.contains(&scan_code) {
             return;
         }
@@ -215,8 +240,15 @@ impl Layers {
             (Some(idx), true) => {
                 self.pressed_modifiers.remove(idx);
             }
-            _ => {} // Ignore repeated key presses
+            _ => return, // Ignore repeated key presses
         }
+
+        self.active_layer = self
+            .match_modifier_sequences(&self.pressed_modifiers)
+            .next()
+            .unwrap();
+
+        // TODO: handle layer locking
     }
 
     /// Returs the remap action associated with the scan code.
@@ -225,15 +257,14 @@ impl Layers {
         // send the correct repeated key press or key up event.
         // If we do not track active key presses the key down and key up events
         // may not be the same if the layer has changed in between.
-        // When the key is not pressed, get the mapping from the active layer.
         let remap = self.pressed_keys.remove(&scan_code).unwrap_or_else(|| {
-            self.layers[self.active_layer_idx()]
+            self.layers[self.active_layer]
                 .mappings
                 .get(&scan_code)
                 .copied()
         });
 
-        self.process_modifiers(scan_code, up);
+        self.update_modifiers(scan_code, up);
 
         if !up {
             self.pressed_keys.insert(scan_code, remap);
