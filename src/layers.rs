@@ -10,6 +10,35 @@ use petgraph::visit::EdgeRef;
 use crate::config::Config;
 use crate::keyboard_hook::Remap;
 
+struct LayerActivations<'a> {
+    layers: &'a Layers,
+    idx: usize,
+}
+
+impl<'a> Iterator for LayerActivations<'a> {
+    type Item = NodeIndex;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let layers = self.layers;
+
+        let mut layer = None;
+
+        for i in self.idx..layers.pressed_modifiers.len() {
+            if let Some(edge) = layers
+                .layer_graph
+                .edges(layer.unwrap_or(layers.base_layer))
+                .find(|edge| *edge.weight() == layers.pressed_modifiers[i])
+            {
+                layer = Some(edge.target());
+                self.idx = i + 1;
+            } else {
+                continue;
+            }
+        }
+        layer
+    }
+}
+
 /// Mapping table for a virtual keyboard layer.
 #[derive(Debug)]
 struct Layer {
@@ -80,20 +109,11 @@ impl Layers {
         })
     }
 
-    fn active_layer(&self) -> NodeIndex {
-        let mut layer = self.base_layer;
-        for scan_code in &self.pressed_modifiers {
-            if let Some(edge) = self
-                .layer_graph
-                .edges(layer)
-                .find(|edge| edge.weight() == scan_code)
-            {
-                layer = edge.target();
-            } else {
-                continue;
-            }
+    fn layer_activations(&self) -> LayerActivations {
+        LayerActivations {
+            layers: self,
+            idx: 0,
         }
-        return layer;
     }
 
     /// Checks if the key is a modifier and updates the active layer accordingly.
@@ -116,7 +136,9 @@ impl Layers {
             _ => return, // Ignore repeated key presses
         }
 
-        self.active_layer = self.active_layer();
+        let mut layer_activations = self.layer_activations();
+        let active_layer = layer_activations.next().unwrap_or(self.base_layer);
+        self.active_layer = active_layer;
     }
 
     /// Returs the remap action associated with the scan code.
