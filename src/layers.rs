@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 
 use anyhow::{anyhow, Result};
-use petgraph::algo;
-use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
+use petgraph::{Directed, Graph, algo};
 
 use crate::config::Config;
 use crate::keyboard_hook::Remap;
@@ -16,7 +16,7 @@ struct LayerActivations<'a> {
 }
 
 impl<'a> Iterator for LayerActivations<'a> {
-    type Item = NodeIndex;
+    type Item = NodeIndex<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let layers = self.layers;
@@ -52,16 +52,16 @@ struct Layer {
 pub struct Layers {
     // A keyboard layout can be viewed as graph where layers are the nodes and
     // modifiers (layer change keys) are the egdes.
-    layer_graph: DiGraph<Layer, u16>,
+    layer_graph: Graph<Layer, u16, Directed, u8>,
 
     /// Set of unique scan codes used for layer switching.
     modifiers_scan_codes: Vec<u16>,
 
     // Base layer.
-    base_layer: NodeIndex,
+    base_layer: NodeIndex<u8>,
 
     // Currently active layer.
-    active_layer: NodeIndex,
+    active_layer: NodeIndex<u8>,
 
     /// Currently pressed layer modifiers keys.
     pressed_modifiers: Vec<u16>,
@@ -72,7 +72,7 @@ pub struct Layers {
 
 impl Layers {
     pub fn new(config: &Config) -> Result<Self> {
-        let mut layer_graph = DiGraph::new();
+        let mut layer_graph = Graph::default();
 
         for layer in config.layer_names() {
             layer_graph.add_node(Layer {
@@ -137,8 +137,19 @@ impl Layers {
         }
 
         let mut layer_activations = self.layer_activations();
-        let active_layer = layer_activations.next().unwrap_or(self.base_layer);
-        self.active_layer = active_layer;
+        println!("mods: {:?}", self.pressed_modifiers);
+        self.active_layer = if let Some(active_layer) = layer_activations.next() {
+            // Lock the layer if we find a second sequence for this layer
+            // Example: Both shift key pressed to lock the shift layer (caps lock functionality).
+            if layer_activations.any(|layer| layer == active_layer) {
+                println!("layer lock {}", self.layer_graph[active_layer].name);
+                // TODO: reverse all edges from base to active_layer
+            }
+
+            active_layer
+        } else {
+            self.base_layer
+        }
     }
 
     /// Returs the remap action associated with the scan code.
