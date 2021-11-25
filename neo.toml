@@ -77,6 +77,9 @@ navigation_numpad = [
     { scan_code = 0x32, virtual_keys = [0x61, 0x62, 0x63] },
     { scan_code = 0x35, characters = ";" },
     { scan_code = 0x39, virtual_keys = [0x60] },
+    # Layer modifiers
+    { scan_code = 0x3A, layer = "l6" }, # caps lock
+    { scan_code = 0x2B, layer = "l6" }, # `\` on US layout, `#` key on german layout
 ]
 
 l5 = [
