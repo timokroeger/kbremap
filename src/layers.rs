@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use anyhow::{anyhow, Result};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use petgraph::{Directed, Graph, algo};
+use petgraph::{algo, Directed, Graph};
 
 use crate::config::Config;
 use crate::keyboard_hook::Remap;
@@ -26,7 +26,7 @@ impl<'a> Iterator for LayerActivations<'a> {
         for i in self.idx..layers.pressed_modifiers.len() {
             if let Some(edge) = layers
                 .layer_graph
-                .edges(layer.unwrap_or(layers.base_layer))
+                .edges(layer.unwrap_or(layers.locked_layer))
                 .find(|edge| *edge.weight() == layers.pressed_modifiers[i])
             {
                 layer = Some(edge.target());
@@ -60,7 +60,10 @@ pub struct Layers {
     // Base layer.
     base_layer: NodeIndex<u8>,
 
-    // Currently active layer.
+    /// Currently locked layer.
+    locked_layer: NodeIndex<u8>,
+
+    /// Currently active layer.
     active_layer: NodeIndex<u8>,
 
     /// Currently pressed layer modifiers keys.
@@ -103,6 +106,7 @@ impl Layers {
             layer_graph,
             modifiers_scan_codes,
             base_layer,
+            locked_layer: base_layer,
             active_layer: base_layer,
             pressed_modifiers: Vec::new(),
             pressed_keys: HashMap::new(),
@@ -137,18 +141,22 @@ impl Layers {
         }
 
         let mut layer_activations = self.layer_activations();
-        println!("mods: {:?}", self.pressed_modifiers);
         self.active_layer = if let Some(active_layer) = layer_activations.next() {
             // Lock the layer if we find a second sequence for this layer
             // Example: Both shift key pressed to lock the shift layer (caps lock functionality).
             if layer_activations.any(|layer| layer == active_layer) {
-                println!("layer lock {}", self.layer_graph[active_layer].name);
-                // TODO: reverse all edges from base to active_layer
+                // Restore original graph when a layer was locked already.
+                reverse_edges(&mut self.layer_graph, self.locked_layer, self.base_layer);
+
+                // Update graph so that the locked with the locked layer as root.
+                reverse_edges(&mut self.layer_graph, self.base_layer, active_layer);
+
+                self.locked_layer = active_layer;
             }
 
             active_layer
         } else {
-            self.base_layer
+            self.locked_layer
         }
     }
 
@@ -172,6 +180,28 @@ impl Layers {
         }
 
         remap
+    }
+}
+
+fn reverse_edges(
+    graph: &mut Graph<Layer, u16, Directed, u8>,
+    from: NodeIndex<u8>,
+    to: NodeIndex<u8>,
+) {
+    let paths: Vec<_> = algo::all_simple_paths::<Vec<_>, _>(&*graph, from, to, 0, None).collect();
+    let mut edges: Vec<[NodeIndex<u8>; 2]> = paths
+        .iter()
+        .flat_map(|path| path.windows(2))
+        .map(|edge| edge.try_into().unwrap())
+        .collect();
+    edges.dedup();
+
+    // Reverse the edge
+    for [from, to] in edges {
+        while let Some(edge) = graph.find_edge(from, to) {
+            let scan_code = graph.remove_edge(edge).unwrap();
+            graph.add_edge(to, from, scan_code);
+        }
     }
 }
 
