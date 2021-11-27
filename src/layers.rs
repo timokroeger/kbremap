@@ -362,4 +362,82 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn layer_lock() -> anyhow::Result<()> {
+        let config_str = r#"[layers]
+        base = [
+            { scan_code = 0x0A, layer = "a" },
+            { scan_code = 0xA0, layer = "a" },
+            { scan_code = 0x0B, layer = "b" },
+            { scan_code = 0xB0, layer = "b" },
+        ]
+        a = [
+            { scan_code = 0x0B, layer = "c" },
+            { scan_code = 0xB0, layer = "c" },
+            { scan_code = 0xAA, characters = "A" },
+        ]
+        b = [
+            { scan_code = 0x0A, layer = "c" },
+            { scan_code = 0xA0, layer = "c" },
+            { scan_code = 0xBB, characters = "B" },
+        ]
+        c = [{ scan_code = 0xCC, characters = "C" }]
+        "#;
+
+        let config = Config::from_toml(config_str)?;
+        let mut layers = Layers::new(&config)?;
+
+        use Remap::*;
+
+        // Lock layer a
+        assert_eq!(layers.get_remapping(0x0A, false), Some(Ignore));
+        assert_eq!(layers.get_remapping(0xA0, false), None);
+        assert_eq!(layers.get_remapping(0x0A, true), Some(Ignore));
+        assert_eq!(layers.get_remapping(0xA0, true), None);
+
+        // Test if locked
+        assert_eq!(layers.get_remapping(0xAA, false), Some(Character('A')));
+        assert_eq!(layers.get_remapping(0xAA, true), Some(Character('A')));
+
+        // Temp switch back to layer base
+        assert_eq!(layers.get_remapping(0x0A, false), None);
+        assert_eq!(layers.get_remapping(0xAA, false), None);
+        assert_eq!(layers.get_remapping(0xAA, true), None);
+        assert_eq!(layers.get_remapping(0x0A, true), None);
+
+        // Temp switch to layer c
+        assert_eq!(layers.get_remapping(0x0B, false), Some(Ignore));
+        assert_eq!(layers.get_remapping(0xCC, false), Some(Character('C')));
+        assert_eq!(layers.get_remapping(0xCC, true), Some(Character('C')));
+
+        // Lock layer c
+        assert_eq!(layers.get_remapping(0xB0, false), None);
+        assert_eq!(layers.get_remapping(0xB0, true), None);
+
+        // Temp switched to layer a still
+        assert_eq!(layers.get_remapping(0xAA, false), Some(Character('A')));
+        assert_eq!(layers.get_remapping(0xAA, true), Some(Character('A')));
+
+        // Check if locked to layer c
+        assert_eq!(layers.get_remapping(0x0B, true), Some(Ignore));
+        assert_eq!(layers.get_remapping(0xCC, false), Some(Character('C')));
+        assert_eq!(layers.get_remapping(0xCC, true), Some(Character('C')));
+
+        // Lock layer base again
+        assert_eq!(layers.get_remapping(0xB0, false), None);
+        assert_eq!(layers.get_remapping(0xA0, false), None);
+        assert_eq!(layers.get_remapping(0x0A, false), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x0B, false), Some(Ignore));
+        assert_eq!(layers.get_remapping(0xB0, true), None);
+        assert_eq!(layers.get_remapping(0xA0, true), None);
+        assert_eq!(layers.get_remapping(0x0A, true), Some(Ignore));
+        assert_eq!(layers.get_remapping(0x0B, true), Some(Ignore));
+
+        // Check if locked to layer base
+        assert_eq!(layers.get_remapping(0xAA, false), None);
+        assert_eq!(layers.get_remapping(0xAA, true), None);
+
+        Ok(())
+    }
 }
