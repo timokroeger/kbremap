@@ -8,7 +8,7 @@ use petgraph::visit::EdgeRef;
 use petgraph::{algo, Directed, Graph};
 
 use crate::config::Config;
-use crate::keyboard_hook::Remap;
+use crate::keyboard_hook::KeyAction;
 
 /// An iterator over layers activated by pressed modifiers.
 ///
@@ -45,7 +45,7 @@ impl<'a> Iterator for LayerActivations<'a> {
 #[derive(Debug)]
 struct Layer {
     name: String,
-    mappings: HashMap<u16, Remap>,
+    mappings: HashMap<u16, KeyAction>,
 }
 
 /// A keyboard layout can be viewed as graph where layers are the nodes and
@@ -65,7 +65,7 @@ pub struct Layers {
     locked_layer: NodeIndex<u8>,
     active_layer: NodeIndex<u8>,
 
-    pressed_keys: HashMap<u16, Option<Remap>>,
+    pressed_keys: HashMap<u16, Option<KeyAction>>,
     pressed_modifiers: Vec<u16>,
 }
 
@@ -162,7 +162,7 @@ impl Layers {
     }
 
     /// Returs the remap action associated with the scan code.
-    pub fn get_remapping(&mut self, scan_code: u16, up: bool) -> Option<Remap> {
+    pub fn get_remapping(&mut self, scan_code: u16, up: bool) -> Option<KeyAction> {
         // Get the active remapping if the key is already pressed so that we can
         // send the correct repeated key press or key up event.
         // If we do not track active key presses the key down and key up events
@@ -221,7 +221,7 @@ mod tests {
         let config = Config::from_toml(config_str)?;
         let mut layers = Layers::new(&config)?;
 
-        use Remap::*;
+        use KeyAction::*;
 
         // L0
         assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
@@ -295,7 +295,7 @@ mod tests {
         let config = Config::from_toml(config_str)?;
         let mut layers = Layers::new(&config)?;
 
-        use Remap::*;
+        use KeyAction::*;
 
         assert_eq!(layers.get_remapping(0xE036, false), Some(VirtualKey(0xA1)));
         assert_eq!(layers.get_remapping(0x002A, false), None);
@@ -328,7 +328,7 @@ mod tests {
         let config = Config::from_toml(config_str)?;
         let mut layers = Layers::new(&config)?;
 
-        use Remap::*;
+        use KeyAction::*;
 
         // "B" does not exist on base layer
         assert_eq!(layers.get_remapping(0xBB, false), None);
@@ -384,7 +384,7 @@ mod tests {
         let config = Config::from_toml(config_str)?;
         let mut layers = Layers::new(&config)?;
 
-        use Remap::*;
+        use KeyAction::*;
 
         // Lock layer a
         assert_eq!(layers.get_remapping(0x0A, false), Some(Ignore));

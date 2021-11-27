@@ -11,7 +11,7 @@ use winapi::shared::minwindef::*;
 use winapi::shared::windef::*;
 use winapi::um::winuser::*;
 
-type HookFn<'a> = dyn FnMut(KeyEvent) -> Option<Remap> + 'a;
+type HookFn<'a> = dyn FnMut(KeyEvent) -> Option<KeyAction> + 'a;
 
 thread_local! {
     /// Stores the hook callback for the current thread.
@@ -34,14 +34,19 @@ pub struct KeyboardHook<'a> {
 impl<'a> KeyboardHook<'a> {
     /// Sets the low-level keyboard hook for this thread.
     ///
-    /// Remaps the key event to a unicode character if the closure returns `Some`.
-    /// Sends the character with a single virtual key if the character is available
-    /// on the current layout. Uses `VK_PACKET` to pass Unicode characters as if
-    /// they were keystrokes for everything else.
+    /// The closure receives key press and key release events. When the closure
+    /// returns `None` they key event is not modified and forwarded to processes
+    /// is if nothing happened. To ignore a key event or to remap it to another
+    /// key return a [`KeyAction`].
+    ///
+    /// Character actions are sent with a single virtual key event if the character
+    /// is available on the current system keyboard layout.
+    /// Uses `VK_PACKET` to remap a key to Unicode codepoint if no dedicated key
+    /// for that character exists.
     ///
     /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediatelly be unregistered and not work."]
-    pub fn set(callback: impl FnMut(KeyEvent) -> Option<Remap> + 'a) -> KeyboardHook<'a> {
+    pub fn set(callback: impl FnMut(KeyEvent) -> Option<KeyAction> + 'a) -> KeyboardHook<'a> {
         HOOK_STATE.with(|state| {
             let mut state = state.borrow_mut();
             assert!(
@@ -69,6 +74,10 @@ impl<'a> KeyboardHook<'a> {
         })
     }
 
+    /// Caps lock is automatically disabled when set to `true`.
+    ///
+    /// Useful when the caps lock state is toggled externally for example by RDP
+    /// or other programs running with admin rights.
     pub fn disable_caps_lock(&self, val: bool) {
         HOOK_STATE.with(|state| state.borrow_mut().disable_caps_lock = val);
     }
@@ -81,12 +90,23 @@ impl<'a> Drop for KeyboardHook<'a> {
     }
 }
 
+/// Type of a key event.
 #[derive(Debug, Clone, Copy)]
-pub struct KeyEvent {
+pub enum KeyType {
     /// Virtual key as defined by the layout set by windows.
     ///
     /// <https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes>
-    pub virtual_key: u8,
+    VirtualKey(u8),
+
+    /// Unicode character.
+    Unicode(char),
+}
+
+/// Key event received by the low level keyboard hook.
+#[derive(Debug, Clone, Copy)]
+pub struct KeyEvent {
+    /// Virtual key or unicode character of this event.
+    pub key: KeyType,
 
     /// Scan code as defined by the keyboard.
     /// Extended keycodes have the three most significant bits set (0xExxx).
@@ -101,24 +121,31 @@ pub struct KeyEvent {
 
 impl Display for KeyEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{{ sc: {:#06X}, ", self.scan_code))?;
+
+        match self.key {
+            KeyType::VirtualKey(vk) => f.write_fmt(format_args!("vk: {:#04X}", vk))?,
+            KeyType::Unicode(c) => f.write_fmt(format_args!("char: {}", c))?,
+        }
+
         f.write_fmt(format_args!(
-            "{{ sc: {:#06X}, vk: {:#04X}, {} }}",
-            self.scan_code,
-            self.virtual_key,
+            ", {} }}",
             if self.up { "up  " } else { "down" }
-        ))
+        ))?;
+
+        Ok(())
     }
 }
 
 impl KeyEvent {
-    pub fn from_hook_lparam(lparam: &KBDLLHOOKSTRUCT) -> Self {
+    fn from_hook_lparam(lparam: &KBDLLHOOKSTRUCT) -> Self {
         let mut scan_code = lparam.scanCode as u16;
         if lparam.flags & LLKHF_EXTENDED != 0 {
             scan_code |= 0xE000;
         }
 
         Self {
-            virtual_key: lparam.vkCode as _,
+            key: KeyType::VirtualKey(lparam.vkCode as _),
             scan_code,
             up: lparam.flags & LLKHF_UP != 0,
             time: lparam.time,
@@ -126,18 +153,16 @@ impl KeyEvent {
     }
 }
 
-/// Remap action associated with the key. Returned by the user provided hook callback.
+/// Action associated with the key. Returned by the user provided hook callback.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum Remap {
-    /// Ignores the key event.
+pub enum KeyAction {
+    /// Do not forward or send a key action.
     Ignore,
 
-    /// Sends a (Unicode) character, if possible as key press,
-    /// Ignores the original key event.
+    /// Sends a (Unicode) character, if possible as virtual key press.
     Character(char),
 
     /// Sends a virtual key press.
-    /// Ignores the original key event.
     /// Reference: <https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes>
     VirtualKey(u8),
 }
@@ -150,9 +175,7 @@ unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM)
 
     let hook_lparam = &*(lparam as *const KBDLLHOOKSTRUCT);
     let injected = hook_lparam.flags & LLKHF_INJECTED != 0;
-    let key = KeyEvent::from_hook_lparam(hook_lparam);
-
-    tracing::debug!(%key, injected);
+    let mut key_event = KeyEvent::from_hook_lparam(hook_lparam);
 
     // `SendInput()` internally calls the hook function. Filter out injected events
     // to prevent recursion and potential stack overflows if our remapping logic
@@ -169,94 +192,100 @@ unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM)
             println!("disabling caps lock");
             send_key(KeyEvent {
                 up: false,
-                virtual_key: VK_CAPITAL as _,
-                ..key
+                key: KeyType::VirtualKey(VK_CAPITAL as _),
+                ..key_event
             });
             send_key(KeyEvent {
                 up: true,
-                virtual_key: VK_CAPITAL as _,
-                ..key
+                key: KeyType::VirtualKey(VK_CAPITAL as _),
+                ..key_event
             });
         }
 
         // The unwrap cannot fail, because windows only calls this function after
         // registering the hook (before which we have set [`HOOK_STATE`]).
-        state.hook.as_mut().unwrap()(key)
+        state.hook.as_mut().unwrap()(key_event)
     });
 
+    let mut log_line = key_event.to_string();
+
     if remap.is_none() {
-        tracing::debug!("forwarded");
+        log_line.push_str("forwarded");
         return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
     }
 
     match remap.unwrap() {
-        Remap::Ignore => {
-            tracing::debug!("ignored");
+        KeyAction::Ignore => {
+            log_line.push_str("ignored");
+            return -1;
         }
-        Remap::Character(c) => {
+        KeyAction::Character(c) => {
             if let Some(virtual_key) = get_virtual_key(c) {
-                tracing::debug!("remapped to `{}` as virtual key", c);
-                send_key(KeyEvent { virtual_key, ..key });
+                log_line = format!("{} remapped to `{}` as virtual key", log_line, c);
+                key_event.key = KeyType::VirtualKey(virtual_key);
             } else {
-                tracing::debug!("remapped to `{}` as unicode input", c);
-                send_unicode(key, c);
+                log_line = format!("{} remapped to `{}` as unicode input", log_line, c);
+                key_event.key = KeyType::Unicode(c);
             }
         }
-        Remap::VirtualKey(virtual_key) => {
-            tracing::debug!("remapped to virtual key {:#04X}", virtual_key);
-            send_key(KeyEvent { virtual_key, ..key });
+        KeyAction::VirtualKey(virtual_key) => {
+            log_line = format!("{} remapped to virtual key {:#04X}", log_line, virtual_key);
+            key_event.key = KeyType::VirtualKey(virtual_key);
         }
     }
+
+    tracing::debug!("{}", log_line);
+
+    send_key(key_event);
 
     -1
 }
 
-/// Injects a unicode character, knows as `VK_PACKET`.
-/// Interestingly this is faster than sending a regular virtual key event.
-fn send_unicode(key: KeyEvent, c: char) {
+fn send_key(key: KeyEvent) {
     unsafe {
         let mut inputs: [INPUT; 2] = mem::zeroed();
-        let n_inputs = inputs
-            .iter_mut()
-            .zip(c.to_utf16())
-            .map(|(input, c)| {
-                let mut kb_input: KEYBDINPUT = mem::zeroed();
-                kb_input.wScan = c;
-                kb_input.dwFlags = KEYEVENTF_UNICODE;
-                if key.up {
-                    kb_input.dwFlags |= KEYEVENTF_KEYUP;
-                }
-                kb_input.time = key.time;
-                input.type_ = INPUT_KEYBOARD;
-                *input.u.ki_mut() = kb_input;
-            })
-            .count();
+
+        let n_inputs = match key.key {
+            KeyType::VirtualKey(vk) => {
+                let mut kb_input = key_input_from_event(key);
+                kb_input.wVk = vk.into();
+
+                inputs[0].type_ = INPUT_KEYBOARD;
+                *inputs[0].u.ki_mut() = kb_input;
+                1
+            }
+            KeyType::Unicode(c) => {
+                // Sends a unicode character, knows as `VK_PACKET`.
+                // Interestingly this is faster than sending a regular virtual key event.
+                inputs
+                    .iter_mut()
+                    .zip(c.to_utf16())
+                    .map(|(input, c)| {
+                        let mut kb_input: KEYBDINPUT = key_input_from_event(key);
+                        kb_input.wScan = c;
+                        kb_input.dwFlags |= KEYEVENTF_UNICODE;
+                        input.type_ = INPUT_KEYBOARD;
+                        *input.u.ki_mut() = kb_input;
+                    })
+                    .count()
+            }
+        };
 
         SendInput(
-            n_inputs as u32,
-            &mut inputs[0],
+            n_inputs as _,
+            inputs.as_mut_ptr(),
             mem::size_of::<INPUT>() as _,
         );
     }
 }
 
-/// Injects a virtual key press.
-fn send_key(key: KeyEvent) {
-    unsafe {
-        let mut kb_input: KEYBDINPUT = mem::zeroed();
-        kb_input.wVk = key.virtual_key.into();
-        kb_input.wScan = key.scan_code;
-        if key.up {
-            kb_input.dwFlags |= KEYEVENTF_KEYUP;
-        }
-        kb_input.time = key.time;
-
-        let mut input: INPUT = mem::zeroed();
-        input.type_ = INPUT_KEYBOARD;
-        *input.u.ki_mut() = kb_input;
-
-        SendInput(1, &mut input, mem::size_of_val(&input) as _);
+fn key_input_from_event(key: KeyEvent) -> KEYBDINPUT {
+    let mut kb_input: KEYBDINPUT = unsafe { mem::zeroed() };
+    if key.up {
+        kb_input.dwFlags |= KEYEVENTF_KEYUP;
     }
+    kb_input.time = key.time;
+    kb_input
 }
 
 /// Returns a virtual key code if the requested character can be typed with a

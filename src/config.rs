@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use crate::keyboard_hook::Remap;
+use crate::keyboard_hook::KeyAction;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -46,14 +46,14 @@ impl Config {
         self.layers.keys().map(String::as_str)
     }
 
-    pub fn layer_mappings(&self, layer_name: &str) -> HashMap<u16, Remap> {
+    pub fn layer_mappings(&self, layer_name: &str) -> HashMap<u16, KeyAction> {
         let mut mappings = HashMap::new();
         for mapping in &self.layers[layer_name] {
-            let mut insert_mapping = |scan_code, remap| {
-                if let Some(prev_remap) = mappings.insert(scan_code, remap) {
+            let mut insert_mapping = |scan_code, action| {
+                if let Some(prev_action) = mappings.insert(scan_code, action) {
                     println!(
                         "Warning: `{:?}` overwritten by `{:?}` for scan_code={:#06X}",
-                        prev_remap, remap, mapping.scan_code
+                        prev_action, action, mapping.scan_code
                     );
                 }
             };
@@ -61,22 +61,22 @@ impl Config {
             match &mapping.target {
                 MappingTarget::Characters { characters } if !characters.is_empty() => {
                     for (i, c) in characters.chars().enumerate() {
-                        insert_mapping(mapping.scan_code + i as u16, Remap::Character(c));
+                        insert_mapping(mapping.scan_code + i as u16, KeyAction::Character(c));
                     }
                 }
                 MappingTarget::VirtualKeys { virtual_keys } if !virtual_keys.is_empty() => {
                     for (i, vk) in virtual_keys.iter().enumerate() {
-                        insert_mapping(mapping.scan_code + i as u16, Remap::VirtualKey(*vk));
+                        insert_mapping(mapping.scan_code + i as u16, KeyAction::VirtualKey(*vk));
                     }
                 }
                 MappingTarget::Layer {
                     virtual_key: Some(vk),
                     ..
                 } => {
-                    insert_mapping(mapping.scan_code, Remap::VirtualKey(*vk));
+                    insert_mapping(mapping.scan_code, KeyAction::VirtualKey(*vk));
                 }
                 _ => {
-                    insert_mapping(mapping.scan_code, Remap::Ignore);
+                    insert_mapping(mapping.scan_code, KeyAction::Ignore);
                 }
             }
         }
