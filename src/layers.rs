@@ -29,7 +29,7 @@ impl<'a> Iterator for LayerActivations<'a> {
             if let Some(edge) = layers
                 .layer_graph
                 .edges(layer.unwrap_or(layers.locked_layer))
-                .find(|edge| *edge.weight() == layers.pressed_modifiers[i])
+                .find(|edge| edge.weight().contains(&layers.pressed_modifiers[i]))
             {
                 layer = Some(edge.target());
                 self.idx = i + 1;
@@ -48,13 +48,15 @@ struct Layer {
     mappings: HashMap<u16, Remap>,
 }
 
+/// A keyboard layout can be viewed as graph where layers are the nodes and
+/// modifiers (layer change keys) are the egdes.
+type LayerGraph = Graph<Layer, Vec<u16>, Directed, u8>;
+
 /// Collection of virtual keyboard layers and logic to switch between them
 /// depending on which modifier keys are pressed.
 #[derive(Debug)]
 pub struct Layers {
-    /// A keyboard layout can be viewed as graph where layers are the nodes and
-    /// modifiers (layer change keys) are the egdes.
-    layer_graph: Graph<Layer, u16, Directed, u8>,
+    layer_graph: LayerGraph,
 
     /// Set of unique scan codes used for layer switching.
     modifiers_scan_codes: Vec<u16>,
@@ -84,7 +86,10 @@ impl Layers {
             for (scan_code, target_layer) in config.layer_modifiers(&layer_graph[from].name) {
                 for to in layer_graph.node_indices() {
                     if layer_graph[to].name == target_layer {
-                        layer_graph.add_edge(from, to, scan_code);
+                        let edge = layer_graph
+                            .find_edge(from, to)
+                            .unwrap_or_else(|| layer_graph.add_edge(from, to, Vec::new()));
+                        layer_graph[edge].push(scan_code);
                         modifiers_scan_codes.push(scan_code);
                     }
                 }
@@ -180,31 +185,19 @@ impl Layers {
 }
 
 /// Reverses the direction of edges on all paths between node `from` and `to`.
-fn reverse_edges(
-    graph: &mut Graph<Layer, u16, Directed, u8>,
-    from: NodeIndex<u8>,
-    to: NodeIndex<u8>,
-) {
+fn reverse_edges(graph: &mut LayerGraph, from: NodeIndex<u8>, to: NodeIndex<u8>) {
     let paths: Vec<_> = algo::all_simple_paths::<Vec<_>, _>(&*graph, from, to, 0, None).collect();
-    let mut edges: Vec<[NodeIndex<u8>; 2]> = paths
+    let edges: Vec<[NodeIndex<u8>; 2]> = paths
         .iter()
         .flat_map(|path| path.windows(2))
         .map(|edge| edge.try_into().unwrap())
         .collect();
 
-    // Keep unique edges only.
-    // `algo::all_simple_paths` returns a lot of duplicate paths when multiple
-    // edges (layer keys) exists between a node (layer). There may also be duplicates
-    // when paths are overlapping.
-    // TODO: combine edges when building the layer graph?
-    edges.dedup();
-
     // Reverse the edge
     for [from, to] in edges {
-        while let Some(edge) = graph.find_edge(from, to) {
-            let scan_code = graph.remove_edge(edge).unwrap();
-            graph.add_edge(to, from, scan_code);
-        }
+        let edge = graph.find_edge(from, to).unwrap();
+        let scan_code = graph.remove_edge(edge).unwrap();
+        graph.add_edge(to, from, scan_code);
     }
 }
 
