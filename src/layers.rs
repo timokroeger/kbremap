@@ -10,6 +10,9 @@ use petgraph::{algo, Directed, Graph};
 use crate::config::Config;
 use crate::keyboard_hook::Remap;
 
+/// An iterator over layers activated by pressed modifiers.
+///
+/// This struct is created by [`Layers::layer_activations`].
 struct LayerActivations<'a> {
     layers: &'a Layers,
     idx: usize,
@@ -22,7 +25,6 @@ impl<'a> Iterator for LayerActivations<'a> {
         let layers = self.layers;
 
         let mut layer = None;
-
         for i in self.idx..layers.pressed_modifiers.len() {
             if let Some(edge) = layers
                 .layer_graph
@@ -50,30 +52,23 @@ struct Layer {
 /// depending on which modifier keys are pressed.
 #[derive(Debug)]
 pub struct Layers {
-    // A keyboard layout can be viewed as graph where layers are the nodes and
-    // modifiers (layer change keys) are the egdes.
+    /// A keyboard layout can be viewed as graph where layers are the nodes and
+    /// modifiers (layer change keys) are the egdes.
     layer_graph: Graph<Layer, u16, Directed, u8>,
 
     /// Set of unique scan codes used for layer switching.
     modifiers_scan_codes: Vec<u16>,
 
-    // Base layer.
     base_layer: NodeIndex<u8>,
-
-    /// Currently locked layer.
     locked_layer: NodeIndex<u8>,
-
-    /// Currently active layer.
     active_layer: NodeIndex<u8>,
 
-    /// Currently pressed layer modifiers keys.
-    pressed_modifiers: Vec<u16>,
-
-    /// Currently pressed keys.
     pressed_keys: HashMap<u16, Option<Remap>>,
+    pressed_modifiers: Vec<u16>,
 }
 
 impl Layers {
+    /// Constructs the layers from a configuration.
     pub fn new(config: &Config) -> Result<Self> {
         let mut layer_graph = Graph::default();
 
@@ -108,11 +103,12 @@ impl Layers {
             base_layer,
             locked_layer: base_layer,
             active_layer: base_layer,
-            pressed_modifiers: Vec::new(),
             pressed_keys: HashMap::new(),
+            pressed_modifiers: Vec::new(),
         })
     }
 
+    /// Creates an iterator over layers activated by the currently pressed modifier keys.
     fn layer_activations(&self) -> LayerActivations {
         LayerActivations {
             layers: self,
@@ -148,7 +144,7 @@ impl Layers {
                 // Restore original graph when a layer was locked already.
                 reverse_edges(&mut self.layer_graph, self.locked_layer, self.base_layer);
 
-                // Update graph so that the locked with the locked layer as root.
+                // Update graph with the locked layer as new base layer.
                 reverse_edges(&mut self.layer_graph, self.base_layer, active_layer);
 
                 self.locked_layer = active_layer;
@@ -183,6 +179,7 @@ impl Layers {
     }
 }
 
+/// Reverses the direction of edges on all paths between node `from` and `to`.
 fn reverse_edges(
     graph: &mut Graph<Layer, u16, Directed, u8>,
     from: NodeIndex<u8>,
@@ -194,6 +191,12 @@ fn reverse_edges(
         .flat_map(|path| path.windows(2))
         .map(|edge| edge.try_into().unwrap())
         .collect();
+
+    // Keep unique edges only.
+    // `algo::all_simple_paths` returns a lot of duplicate paths when multiple
+    // edges (layer keys) exists between a node (layer). There may also be duplicates
+    // when paths are overlapping.
+    // TODO: combine edges when building the layer graph?
     edges.dedup();
 
     // Reverse the edge
