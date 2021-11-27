@@ -28,9 +28,8 @@ Comments in the `config.toml` file explain how to configure the Dvorak layout.
 * Optional QWERTY/QWERTZ layout for shortcuts with CTRL, ALT and WIN modifiers
 
 ## Known issues
-* Layer locking not supported
 * Compose key not avaible (yet)
-* Layer "base" must exists in the configuration
+* Layer locking always enabled for every layer that can be reached by two different keys
 
 ## License
 
