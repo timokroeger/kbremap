@@ -150,8 +150,6 @@ impl VirtualKeyboard {
                 // Update graph with the locked layer as new base layer.
                 reverse_edges(&mut self.layer_graph, self.base_layer, active_layer);
 
-                self.layer_history.clear();
-                self.layer_history.push(active_layer);
                 self.locked_layer = active_layer;
             }
 
@@ -177,16 +175,18 @@ impl VirtualKeyboard {
         // may not be the same if the layer has changed in between.
         let action = self.pressed_keys.remove(&scan_code).unwrap_or_else(|| {
             let key = self.layout.get_key(scan_code);
-            key.action_on_layer(self.layer_history.last().unwrap().index() as _)
 
-            // let mut action = None;
-            // for layer in layer_history {
-            //     if let Some(action) = key.action_on_layer(layer) {
-            //         action = Some(action);
-            //         break;
-            //     }
-            // }
-            // action
+            // Get the key action from the current layer or from the previous layer
+            // if it is not availble on the currently active layer.
+            // Repeat until a action was found or we run out of layers.
+            let mut action = None;
+            for layer in self.layer_history.iter().rev() {
+                if let Some(a) = key.action_on_layer(layer.index() as _) {
+                    action = Some(a);
+                    break;
+                }
+            }
+            action
         });
 
         self.update_modifiers(scan_code, false);
@@ -282,13 +282,13 @@ mod tests {
         assert_eq!(kb.press_key(0x12), Some(Ignore));
         assert_eq!(kb.press_key(0x20), Some(Character('2')));
         assert_eq!(kb.release_key(0x20), Some(Character('2')));
-        assert_eq!(kb.press_key(0x11), None);
+        assert_eq!(kb.press_key(0x11), Some(Ignore));
         assert_eq!(kb.press_key(0x20), Some(Character('2')));
         assert_eq!(kb.release_key(0x20), Some(Character('2')));
         assert_eq!(kb.release_key(0x12), Some(Ignore));
         assert_eq!(kb.press_key(0x20), Some(Character('1')));
         assert_eq!(kb.release_key(0x20), Some(Character('1')));
-        assert_eq!(kb.release_key(0x11), None);
+        assert_eq!(kb.release_key(0x11), Some(Ignore));
         assert_eq!(kb.press_key(0x20), Some(Character('0')));
         assert_eq!(kb.release_key(0x20), Some(Character('0')));
 
@@ -313,8 +313,8 @@ mod tests {
         let mut kb = VirtualKeyboard::new(layout)?;
 
         assert_eq!(kb.press_key(0xE036), Some(VirtualKey(0xA1)));
-        assert_eq!(kb.press_key(0x002A), None);
-        assert_eq!(kb.release_key(0x002A), None);
+        assert_eq!(kb.press_key(0x002A), Some(VirtualKey(0xA0)));
+        assert_eq!(kb.release_key(0x002A), Some(VirtualKey(0xA0)));
         assert_eq!(kb.release_key(0xE036), Some(VirtualKey(0xA1)));
 
         Ok(())
@@ -380,63 +380,118 @@ mod tests {
             .add_modifier(0xA0, "base", "a", None)
             .add_modifier(0x0B, "base", "b", None)
             .add_modifier(0xB0, "base", "b", None)
+            .add_key(0xFF, "base", Character('X'))
             .add_modifier(0x0B, "a", "c", None)
             .add_modifier(0xB0, "a", "c", None)
-            .add_key(0xAA, "a", Character('A'))
+            .add_key(0xFF, "a", Character('A'))
             .add_modifier(0x0A, "b", "c", None)
             .add_modifier(0xA0, "b", "c", None)
-            .add_key(0xBB, "b", Character('B'))
-            .add_key(0xCC, "c", Character('C'));
+            .add_key(0xFF, "b", Character('B'))
+            .add_key(0xFF, "c", Character('C'));
         let layout = layout.build();
         let mut kb = VirtualKeyboard::new(layout)?;
 
         // Lock layer a
         assert_eq!(kb.press_key(0x0A), Some(Ignore));
-        assert_eq!(kb.press_key(0xA0), None);
+        assert_eq!(kb.press_key(0xA0), Some(Ignore));
         assert_eq!(kb.release_key(0x0A), Some(Ignore));
-        assert_eq!(kb.release_key(0xA0), None);
+        assert_eq!(kb.release_key(0xA0), Some(Ignore));
 
         // Test if locked
-        assert_eq!(kb.press_key(0xAA), Some(Character('A')));
-        assert_eq!(kb.release_key(0xAA), Some(Character('A')));
+        assert_eq!(kb.press_key(0xFF), Some(Character('A')));
+        assert_eq!(kb.release_key(0xFF), Some(Character('A')));
 
         // Temp switch back to layer base
-        assert_eq!(kb.press_key(0x0A), None);
-        assert_eq!(kb.press_key(0xAA), None);
-        assert_eq!(kb.release_key(0xAA), None);
-        assert_eq!(kb.release_key(0x0A), None);
+        assert_eq!(kb.press_key(0x0A), Some(Ignore));
+        assert_eq!(kb.press_key(0xFF), Some(Character('X')));
+        assert_eq!(kb.release_key(0xFF), Some(Character('X')));
+        assert_eq!(kb.release_key(0x0A), Some(Ignore));
 
         // Temp switch to layer c
         assert_eq!(kb.press_key(0x0B), Some(Ignore));
-        assert_eq!(kb.press_key(0xCC), Some(Character('C')));
-        assert_eq!(kb.release_key(0xCC), Some(Character('C')));
+        assert_eq!(kb.press_key(0xFF), Some(Character('C')));
+        assert_eq!(kb.release_key(0xFF), Some(Character('C')));
 
         // Lock layer c
-        assert_eq!(kb.press_key(0xB0), None);
-        assert_eq!(kb.release_key(0xB0), None);
+        assert_eq!(kb.press_key(0xB0), Some(Ignore));
+        assert_eq!(kb.release_key(0xB0), Some(Ignore));
 
         // Temp switched to layer a still
-        assert_eq!(kb.press_key(0xAA), Some(Character('A')));
-        assert_eq!(kb.release_key(0xAA), Some(Character('A')));
+        assert_eq!(kb.press_key(0xFF), Some(Character('A')));
+        assert_eq!(kb.release_key(0xFF), Some(Character('A')));
 
         // Check if locked to layer c
         assert_eq!(kb.release_key(0x0B), Some(Ignore));
-        assert_eq!(kb.press_key(0xCC), Some(Character('C')));
-        assert_eq!(kb.release_key(0xCC), Some(Character('C')));
+        assert_eq!(kb.press_key(0xFF), Some(Character('C')));
+        assert_eq!(kb.release_key(0xFF), Some(Character('C')));
 
         // Lock layer base again
-        assert_eq!(kb.press_key(0xB0), None);
-        assert_eq!(kb.press_key(0xA0), None);
+        assert_eq!(kb.press_key(0xB0), Some(Ignore));
+        assert_eq!(kb.press_key(0xA0), Some(Ignore));
         assert_eq!(kb.press_key(0x0A), Some(Ignore));
         assert_eq!(kb.press_key(0x0B), Some(Ignore));
-        assert_eq!(kb.release_key(0xB0), None);
-        assert_eq!(kb.release_key(0xA0), None);
+        assert_eq!(kb.release_key(0xB0), Some(Ignore));
+        assert_eq!(kb.release_key(0xA0), Some(Ignore));
         assert_eq!(kb.release_key(0x0A), Some(Ignore));
         assert_eq!(kb.release_key(0x0B), Some(Ignore));
 
         // Check if locked to layer base
-        assert_eq!(kb.press_key(0xAA), None);
-        assert_eq!(kb.release_key(0xAA), None);
+        assert_eq!(kb.press_key(0xFF), Some(Character('X')));
+        assert_eq!(kb.release_key(0xFF), Some(Character('X')));
+
+        Ok(())
+    }
+
+    #[test]
+    fn transparency() -> anyhow::Result<()> {
+        let mut layout = LayoutBuilder::new();
+        layout
+            .add_modifier(0x0B, "a", "b", None)
+            .add_modifier(0xB0, "a", "b", None)
+            .add_key(0x01, "a", Character('A'))
+            .add_key(0x02, "a", Character('A'))
+            .add_key(0x03, "a", Character('A'))
+            .add_modifier(0x0C, "b", "c", None)
+            .add_modifier(0xC0, "b", "c", None)
+            .add_key(0x01, "b", Character('B'))
+            .add_key(0x02, "b", Character('B'))
+            .add_key(0x01, "c", Character('C'));
+        let layout = layout.build();
+        let mut kb = VirtualKeyboard::new(layout)?;
+
+        // Layer a
+        assert_eq!(kb.press_key(0x01), Some(Character('A')));
+        assert_eq!(kb.release_key(0x01), Some(Character('A')));
+        assert_eq!(kb.press_key(0x02), Some(Character('A')));
+        assert_eq!(kb.release_key(0x02), Some(Character('A')));
+        assert_eq!(kb.press_key(0x03), Some(Character('A')));
+        assert_eq!(kb.release_key(0x03), Some(Character('A')));
+        assert_eq!(kb.press_key(0x04), None);
+        assert_eq!(kb.release_key(0x04), None);
+
+        assert_eq!(kb.press_key(0x0B), Some(Ignore));
+
+        // Layer b
+        assert_eq!(kb.press_key(0x01), Some(Character('B')));
+        assert_eq!(kb.release_key(0x01), Some(Character('B')));
+        assert_eq!(kb.press_key(0x02), Some(Character('B')));
+        assert_eq!(kb.release_key(0x02), Some(Character('B')));
+        assert_eq!(kb.press_key(0x03), Some(Character('A')));
+        assert_eq!(kb.release_key(0x03), Some(Character('A')));
+        assert_eq!(kb.press_key(0x04), None);
+        assert_eq!(kb.release_key(0x04), None);
+
+        assert_eq!(kb.press_key(0x0C), Some(Ignore));
+
+        // Layer c
+        assert_eq!(kb.press_key(0x01), Some(Character('C')));
+        assert_eq!(kb.release_key(0x01), Some(Character('C')));
+        assert_eq!(kb.press_key(0x02), Some(Character('B')));
+        assert_eq!(kb.release_key(0x02), Some(Character('B')));
+        assert_eq!(kb.press_key(0x03), Some(Character('A')));
+        assert_eq!(kb.release_key(0x03), Some(Character('A')));
+        assert_eq!(kb.press_key(0x04), None);
+        assert_eq!(kb.release_key(0x04), None);
 
         Ok(())
     }
