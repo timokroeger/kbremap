@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+- Layer locking #32
+
+### Fixed
+- The base layer can now have any name
+
 ## [1.2.0] - 2021-11-21
 
 ### Added
