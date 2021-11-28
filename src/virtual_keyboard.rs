@@ -7,9 +7,8 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::{algo, Directed, Graph};
 
-use crate::config::Config;
 use crate::keyboard_hook::KeyAction;
-use crate::layout::{LayouBuilder, Layout};
+use crate::layout::Layout;
 
 /// An iterator over layers activated by pressed modifiers.
 ///
@@ -66,30 +65,8 @@ pub struct VirtualKeyboard {
 }
 
 impl VirtualKeyboard {
-    /// Constructs the layers from a configuration.
-    pub fn new(config: &Config) -> Result<Self> {
-        // TODO: move
-        let mut layout_builder = LayouBuilder::new();
-        for layer in config.layer_names() {
-            let modifiers: HashMap<u16, &str> = config.layer_modifiers(layer).collect();
-
-            for (scan_code, action) in config.layer_mappings(layer) {
-                if let Some(target_layer) = modifiers.get(&scan_code) {
-                    let vk = match action {
-                        KeyAction::Ignore => None,
-                        KeyAction::VirtualKey(vk) => Some(vk),
-                        _ => panic!("invalid modifer target"),
-                    };
-                    println!("{} --{}--> {}", layer, scan_code, target_layer);
-                    layout_builder.add_modifier(scan_code, layer, target_layer, vk);
-                } else {
-                    layout_builder.add_key(scan_code, layer, action);
-                }
-            }
-        }
-
-        let layout = layout_builder.build();
-
+    /// Create a new virtual keyboard with `layout`.
+    pub fn new(layout: Layout) -> Result<Self> {
         let mut modifiers: Vec<_> = layout.modifiers().collect();
         modifiers.sort_by(|a, b| {
             a.layer_from
@@ -238,25 +215,24 @@ fn reverse_edges(graph: &mut LayerGraph, from: NodeIndex<u8>, to: NodeIndex<u8>)
 
 #[cfg(test)]
 mod tests {
+    use crate::layout::LayoutBuilder;
+
+    use super::KeyAction::*;
     use super::*;
 
     #[test]
     fn layer_activation() -> anyhow::Result<()> {
-        let config_str = r#"[layers]
-        base = [
-            { scan_code = 0x11, layer = "l1" },
-            { scan_code = 0x12, layer = "l2" },
-            { scan_code = 0x20, characters = "0" },
-        ]
-        l1 = [{ scan_code = 0x12, layer = "l3" }, { scan_code = 0x20, characters = "1" }]
-        l2 = [{ scan_code = 0x20, characters = "2" }]
-        l3 = [{ scan_code = 0x20, characters = "3" }]
-        "#;
-
-        let config = Config::from_toml(config_str)?;
-        let mut kb = VirtualKeyboard::new(&config)?;
-
-        use KeyAction::*;
+        let mut layout = LayoutBuilder::new();
+        layout
+            .add_modifier(0x11, "base", "l1", None)
+            .add_modifier(0x12, "base", "l2", None)
+            .add_key(0x20, "base", Character('0'))
+            .add_modifier(0x12, "l1", "l3", None)
+            .add_key(0x20, "l1", Character('1'))
+            .add_key(0x20, "l2", Character('2'))
+            .add_key(0x20, "l3", Character('3'));
+        let layout = layout.build();
+        let mut kb = VirtualKeyboard::new(layout)?;
 
         // L0
         assert_eq!(kb.press_key(0x20), Some(Character('0')));
@@ -319,18 +295,12 @@ mod tests {
 
     #[test]
     fn accidental_shift_lock_issue25() -> anyhow::Result<()> {
-        let config_str = r#"[layers]
-        base = [
-            { scan_code = 0x2A, layer = "shift", virtual_key = 0xA0 }, # left shift
-            { scan_code = 0xE036, layer = "shift", virtual_key = 0xA1 }, # right shift
-        ]
-        shift = []
-        "#;
-
-        let config = Config::from_toml(config_str)?;
-        let mut kb = VirtualKeyboard::new(&config)?;
-
-        use KeyAction::*;
+        let mut layout = LayoutBuilder::new();
+        layout
+            .add_modifier(0x2A, "base", "shift", Some(0xA0))
+            .add_modifier(0xE036, "base", "shift", Some(0xA1));
+        let layout = layout.build();
+        let mut kb = VirtualKeyboard::new(layout)?;
 
         assert_eq!(kb.press_key(0xE036), Some(VirtualKey(0xA1)));
         assert_eq!(kb.press_key(0x002A), None);
@@ -342,28 +312,26 @@ mod tests {
 
     #[test]
     fn cyclic_layers() {
-        let config_str = r#"[layers]
-        base = [{ scan_code = 0x0001, layer = "overlay" }]
-        overlay = [{ scan_code = 0x0002, layer = "base" }]
-        "#;
+        let mut layout = LayoutBuilder::new();
+        layout
+            .add_modifier(0x0001, "base", "overlay", None)
+            .add_modifier(0x0002, "overlay", "base", None);
+        let layout = layout.build();
 
-        let config = Config::from_toml(config_str).unwrap();
-        assert!(VirtualKeyboard::new(&config).is_err());
+        assert!(VirtualKeyboard::new(layout).is_err());
     }
 
     #[test]
     fn masked_modifier_on_base_layer() -> anyhow::Result<()> {
-        let config_str = r#"[layers]
-        base = [{ scan_code = 0x0A, layer = "a" }, { scan_code = 0x0B, layer = "b" }]
-        a = [{ scan_code = 0x0C, layer = "c" }]
-        b = [{ scan_code = 0xBB, characters = "B" }]
-        c = [{ scan_code = 0xCC, characters = "C" }] # not reachable from base
-        "#;
-
-        let config = Config::from_toml(config_str)?;
-        let mut kb = VirtualKeyboard::new(&config)?;
-
-        use KeyAction::*;
+        let mut layout = LayoutBuilder::new();
+        layout
+            .add_modifier(0x0A, "base", "a", None)
+            .add_modifier(0x0B, "base", "b", None)
+            .add_modifier(0x0C, "a", "c", None)
+            .add_key(0xBB, "b", Character('B'))
+            .add_key(0xCC, "c", Character('C')); // not reachable from base
+        let layout = layout.build();
+        let mut kb = VirtualKeyboard::new(layout)?;
 
         // "B" does not exist on base layer
         assert_eq!(kb.press_key(0xBB), None);
@@ -396,30 +364,21 @@ mod tests {
 
     #[test]
     fn layer_lock() -> anyhow::Result<()> {
-        let config_str = r#"[layers]
-        base = [
-            { scan_code = 0x0A, layer = "a" },
-            { scan_code = 0xA0, layer = "a" },
-            { scan_code = 0x0B, layer = "b" },
-            { scan_code = 0xB0, layer = "b" },
-        ]
-        a = [
-            { scan_code = 0x0B, layer = "c" },
-            { scan_code = 0xB0, layer = "c" },
-            { scan_code = 0xAA, characters = "A" },
-        ]
-        b = [
-            { scan_code = 0x0A, layer = "c" },
-            { scan_code = 0xA0, layer = "c" },
-            { scan_code = 0xBB, characters = "B" },
-        ]
-        c = [{ scan_code = 0xCC, characters = "C" }]
-        "#;
-
-        let config = Config::from_toml(config_str)?;
-        let mut kb = VirtualKeyboard::new(&config)?;
-
-        use KeyAction::*;
+        let mut layout = LayoutBuilder::new();
+        layout
+            .add_modifier(0x0A, "base", "a", None)
+            .add_modifier(0xA0, "base", "a", None)
+            .add_modifier(0x0B, "base", "b", None)
+            .add_modifier(0xB0, "base", "b", None)
+            .add_modifier(0x0B, "a", "c", None)
+            .add_modifier(0xB0, "a", "c", None)
+            .add_key(0xAA, "a", Character('A'))
+            .add_modifier(0x0A, "b", "c", None)
+            .add_modifier(0xA0, "b", "c", None)
+            .add_key(0xBB, "b", Character('B'))
+            .add_key(0xCC, "c", Character('C'));
+        let layout = layout.build();
+        let mut kb = VirtualKeyboard::new(layout)?;
 
         // Lock layer a
         assert_eq!(kb.press_key(0x0A), Some(Ignore));

@@ -30,12 +30,12 @@ impl Key {
 }
 
 #[derive(Debug)]
-pub struct LayouBuilder {
+pub struct LayoutBuilder {
     keys: Vec<Key>,
     layer_names: Vec<String>,
 }
 
-impl LayouBuilder {
+impl LayoutBuilder {
     pub fn new() -> Self {
         Self {
             keys: Vec::new(),
