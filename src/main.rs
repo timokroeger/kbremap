@@ -3,11 +3,11 @@
 
 mod config;
 mod keyboard_hook;
-mod layers;
+mod layout;
 mod resources;
 mod tray_icon;
+mod virtual_keyboard;
 mod winapi_util;
-mod layout;
 
 use std::path::Path;
 use std::{env, fs};
@@ -15,8 +15,8 @@ use std::{env, fs};
 use anyhow::Result;
 use config::Config;
 use keyboard_hook::KeyboardHook;
-use layers::Layers;
 use tracing::Level;
+use virtual_keyboard::VirtualKeyboard;
 
 use crate::tray_icon::TrayIcon;
 
@@ -68,14 +68,18 @@ fn main() -> Result<()> {
     native_windows_gui::init()?;
     let ui = TrayIcon::new(console_available)?;
 
-    let mut layers = Layers::new(&config)?;
+    let mut kb = VirtualKeyboard::new(&config)?;
 
     let kbhook = KeyboardHook::set(|key| {
         if !ui.is_enabled() {
             return None;
         }
 
-        layers.get_remapping(key.scan_code, key.up)
+        if key.up {
+            kb.release_key(key.scan_code)
+        } else {
+            kb.press_key(key.scan_code)
+        }
     });
     kbhook.disable_caps_lock(config.disable_caps_lock);
 

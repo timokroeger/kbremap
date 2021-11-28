@@ -15,7 +15,7 @@ use crate::layout::{LayouBuilder, Layout};
 ///
 /// This struct is created by [`Layers::layer_activations`].
 struct LayerActivations<'a> {
-    layers: &'a Layers,
+    layers: &'a VirtualKeyboard,
     idx: usize,
 }
 
@@ -49,7 +49,7 @@ type LayerGraph = Graph<(), Vec<u16>, Directed, u8>;
 /// Collection of virtual keyboard layers and logic to switch between them
 /// depending on which modifier keys are pressed.
 #[derive(Debug)]
-pub struct Layers {
+pub struct VirtualKeyboard {
     layout: Layout,
 
     layer_graph: LayerGraph,
@@ -65,7 +65,7 @@ pub struct Layers {
     pressed_modifiers: Vec<u16>,
 }
 
-impl Layers {
+impl VirtualKeyboard {
     /// Constructs the layers from a configuration.
     pub fn new(config: &Config) -> Result<Self> {
         // TODO: move
@@ -182,13 +182,13 @@ impl Layers {
         }
     }
 
-    /// Returs the remap action associated with the scan code.
-    pub fn get_remapping(&mut self, scan_code: u16, up: bool) -> Option<KeyAction> {
-        // Get the active remapping if the key is already pressed so that we can
+    /// Returs the key action associated with the scan code press.
+    pub fn press_key(&mut self, scan_code: u16) -> Option<KeyAction> {
+        // Get the active action if the key is already pressed so that we can
         // send the correct repeated key press or key up event.
         // If we do not track active key presses the key down and key up events
         // may not be the same if the layer has changed in between.
-        let remap = self.pressed_keys.remove(&scan_code).unwrap_or_else(|| {
+        let action = self.pressed_keys.remove(&scan_code).unwrap_or_else(|| {
             let key = self.layout.get_key(scan_code);
             key.action_on_layer(self.active_layer.index() as _)
 
@@ -202,13 +202,20 @@ impl Layers {
             // action
         });
 
-        self.update_modifiers(scan_code, up);
+        self.update_modifiers(scan_code, false);
+        self.pressed_keys.insert(scan_code, action);
+        action
+    }
 
-        if !up {
-            self.pressed_keys.insert(scan_code, remap);
-        }
+    /// Returs the key action associated with the scan code release.
+    pub fn release_key(&mut self, scan_code: u16) -> Option<KeyAction> {
+        self.update_modifiers(scan_code, true);
 
-        remap
+        // Release the pressed key, or ignore it when the key was released without
+        // it being pressed before.
+        self.pressed_keys
+            .remove(&scan_code)
+            .unwrap_or(Some(KeyAction::Ignore))
     }
 }
 
@@ -247,65 +254,65 @@ mod tests {
         "#;
 
         let config = Config::from_toml(config_str)?;
-        let mut layers = Layers::new(&config)?;
+        let mut kb = VirtualKeyboard::new(&config)?;
 
         use KeyAction::*;
 
         // L0
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
+        assert_eq!(kb.press_key(0x20), Some(Character('0')));
+        assert_eq!(kb.release_key(0x20), Some(Character('0')));
 
         // L1
-        assert_eq!(layers.get_remapping(0x11, false), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('1')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('1')));
-        assert_eq!(layers.get_remapping(0x11, true), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
+        assert_eq!(kb.press_key(0x11), Some(Ignore));
+        assert_eq!(kb.press_key(0x20), Some(Character('1')));
+        assert_eq!(kb.release_key(0x20), Some(Character('1')));
+        assert_eq!(kb.release_key(0x11), Some(Ignore));
+        assert_eq!(kb.press_key(0x20), Some(Character('0')));
+        assert_eq!(kb.release_key(0x20), Some(Character('0')));
 
         // L2
-        assert_eq!(layers.get_remapping(0x12, false), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('2')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('2')));
-        assert_eq!(layers.get_remapping(0x12, true), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
+        assert_eq!(kb.press_key(0x12), Some(Ignore));
+        assert_eq!(kb.press_key(0x20), Some(Character('2')));
+        assert_eq!(kb.release_key(0x20), Some(Character('2')));
+        assert_eq!(kb.release_key(0x12), Some(Ignore));
+        assert_eq!(kb.press_key(0x20), Some(Character('0')));
+        assert_eq!(kb.release_key(0x20), Some(Character('0')));
 
         // L1 -> L3 -> L2
-        assert_eq!(layers.get_remapping(0x11, false), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('1')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('1')));
-        assert_eq!(layers.get_remapping(0x12, false), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('3')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('3')));
-        assert_eq!(layers.get_remapping(0x11, true), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('2')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('2')));
-        assert_eq!(layers.get_remapping(0x12, true), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
+        assert_eq!(kb.press_key(0x11), Some(Ignore));
+        assert_eq!(kb.press_key(0x20), Some(Character('1')));
+        assert_eq!(kb.release_key(0x20), Some(Character('1')));
+        assert_eq!(kb.press_key(0x12), Some(Ignore));
+        assert_eq!(kb.press_key(0x20), Some(Character('3')));
+        assert_eq!(kb.release_key(0x20), Some(Character('3')));
+        assert_eq!(kb.release_key(0x11), Some(Ignore));
+        assert_eq!(kb.press_key(0x20), Some(Character('2')));
+        assert_eq!(kb.release_key(0x20), Some(Character('2')));
+        assert_eq!(kb.release_key(0x12), Some(Ignore));
+        assert_eq!(kb.press_key(0x20), Some(Character('0')));
+        assert_eq!(kb.release_key(0x20), Some(Character('0')));
 
         // L2 -> XX (L2 still active) -> L1
-        assert_eq!(layers.get_remapping(0x12, false), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('2')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('2')));
-        assert_eq!(layers.get_remapping(0x11, false), None);
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('2')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('2')));
-        assert_eq!(layers.get_remapping(0x12, true), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('1')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('1')));
-        assert_eq!(layers.get_remapping(0x11, true), None);
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
+        assert_eq!(kb.press_key(0x12), Some(Ignore));
+        assert_eq!(kb.press_key(0x20), Some(Character('2')));
+        assert_eq!(kb.release_key(0x20), Some(Character('2')));
+        assert_eq!(kb.press_key(0x11), None);
+        assert_eq!(kb.press_key(0x20), Some(Character('2')));
+        assert_eq!(kb.release_key(0x20), Some(Character('2')));
+        assert_eq!(kb.release_key(0x12), Some(Ignore));
+        assert_eq!(kb.press_key(0x20), Some(Character('1')));
+        assert_eq!(kb.release_key(0x20), Some(Character('1')));
+        assert_eq!(kb.release_key(0x11), None);
+        assert_eq!(kb.press_key(0x20), Some(Character('0')));
+        assert_eq!(kb.release_key(0x20), Some(Character('0')));
 
         // Change layer during key press
-        assert_eq!(layers.get_remapping(0x11, false), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('1')));
-        assert_eq!(layers.get_remapping(0x11, true), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('1')));
-        assert_eq!(layers.get_remapping(0x20, false), Some(Character('0')));
-        assert_eq!(layers.get_remapping(0x20, true), Some(Character('0')));
+        assert_eq!(kb.press_key(0x11), Some(Ignore));
+        assert_eq!(kb.press_key(0x20), Some(Character('1')));
+        assert_eq!(kb.release_key(0x11), Some(Ignore));
+        assert_eq!(kb.release_key(0x20), Some(Character('1')));
+        assert_eq!(kb.press_key(0x20), Some(Character('0')));
+        assert_eq!(kb.release_key(0x20), Some(Character('0')));
 
         Ok(())
     }
@@ -321,14 +328,14 @@ mod tests {
         "#;
 
         let config = Config::from_toml(config_str)?;
-        let mut layers = Layers::new(&config)?;
+        let mut kb = VirtualKeyboard::new(&config)?;
 
         use KeyAction::*;
 
-        assert_eq!(layers.get_remapping(0xE036, false), Some(VirtualKey(0xA1)));
-        assert_eq!(layers.get_remapping(0x002A, false), None);
-        assert_eq!(layers.get_remapping(0x002A, true), None);
-        assert_eq!(layers.get_remapping(0xE036, true), Some(VirtualKey(0xA1)));
+        assert_eq!(kb.press_key(0xE036), Some(VirtualKey(0xA1)));
+        assert_eq!(kb.press_key(0x002A), None);
+        assert_eq!(kb.release_key(0x002A), None);
+        assert_eq!(kb.release_key(0xE036), Some(VirtualKey(0xA1)));
 
         Ok(())
     }
@@ -341,7 +348,7 @@ mod tests {
         "#;
 
         let config = Config::from_toml(config_str).unwrap();
-        assert!(Layers::new(&config).is_err());
+        assert!(VirtualKeyboard::new(&config).is_err());
     }
 
     #[test]
@@ -354,35 +361,35 @@ mod tests {
         "#;
 
         let config = Config::from_toml(config_str)?;
-        let mut layers = Layers::new(&config)?;
+        let mut kb = VirtualKeyboard::new(&config)?;
 
         use KeyAction::*;
 
         // "B" does not exist on base layer
-        assert_eq!(layers.get_remapping(0xBB, false), None);
-        assert_eq!(layers.get_remapping(0xBB, true), None);
+        assert_eq!(kb.press_key(0xBB), None);
+        assert_eq!(kb.release_key(0xBB), None);
 
         // Layer c should not be activated from the base layer
-        assert_eq!(layers.get_remapping(0x0C, false), None);
-        assert_eq!(layers.get_remapping(0xCC, false), None);
-        assert_eq!(layers.get_remapping(0xCC, true), None);
+        assert_eq!(kb.press_key(0x0C), None);
+        assert_eq!(kb.press_key(0xCC), None);
+        assert_eq!(kb.release_key(0xCC), None);
 
         // But Layer b should be activated even when modifier for layer c pressed.
-        assert_eq!(layers.get_remapping(0x0B, false), Some(Ignore));
-        assert_eq!(layers.get_remapping(0xBB, false), Some(Character('B')));
-        assert_eq!(layers.get_remapping(0xBB, true), Some(Character('B')));
+        assert_eq!(kb.press_key(0x0B), Some(Ignore));
+        assert_eq!(kb.press_key(0xBB), Some(Character('B')));
+        assert_eq!(kb.release_key(0xBB), Some(Character('B')));
 
         // Release layer c key (it was never activated) and make sure we are still on layer b.
-        assert_eq!(layers.get_remapping(0x0C, true), None);
-        assert_eq!(layers.get_remapping(0xBB, false), Some(Character('B')));
-        assert_eq!(layers.get_remapping(0xBB, true), Some(Character('B')));
+        assert_eq!(kb.release_key(0x0C), None);
+        assert_eq!(kb.press_key(0xBB), Some(Character('B')));
+        assert_eq!(kb.release_key(0xBB), Some(Character('B')));
 
         // Release leayer b key
-        assert_eq!(layers.get_remapping(0x0B, true), Some(Ignore));
+        assert_eq!(kb.release_key(0x0B), Some(Ignore));
 
         // "B" does not exist on base layer
-        assert_eq!(layers.get_remapping(0xBB, false), None);
-        assert_eq!(layers.get_remapping(0xBB, true), None);
+        assert_eq!(kb.press_key(0xBB), None);
+        assert_eq!(kb.release_key(0xBB), None);
 
         Ok(())
     }
@@ -410,57 +417,57 @@ mod tests {
         "#;
 
         let config = Config::from_toml(config_str)?;
-        let mut layers = Layers::new(&config)?;
+        let mut kb = VirtualKeyboard::new(&config)?;
 
         use KeyAction::*;
 
         // Lock layer a
-        assert_eq!(layers.get_remapping(0x0A, false), Some(Ignore));
-        assert_eq!(layers.get_remapping(0xA0, false), None);
-        assert_eq!(layers.get_remapping(0x0A, true), Some(Ignore));
-        assert_eq!(layers.get_remapping(0xA0, true), None);
+        assert_eq!(kb.press_key(0x0A), Some(Ignore));
+        assert_eq!(kb.press_key(0xA0), None);
+        assert_eq!(kb.release_key(0x0A), Some(Ignore));
+        assert_eq!(kb.release_key(0xA0), None);
 
         // Test if locked
-        assert_eq!(layers.get_remapping(0xAA, false), Some(Character('A')));
-        assert_eq!(layers.get_remapping(0xAA, true), Some(Character('A')));
+        assert_eq!(kb.press_key(0xAA), Some(Character('A')));
+        assert_eq!(kb.release_key(0xAA), Some(Character('A')));
 
         // Temp switch back to layer base
-        assert_eq!(layers.get_remapping(0x0A, false), None);
-        assert_eq!(layers.get_remapping(0xAA, false), None);
-        assert_eq!(layers.get_remapping(0xAA, true), None);
-        assert_eq!(layers.get_remapping(0x0A, true), None);
+        assert_eq!(kb.press_key(0x0A), None);
+        assert_eq!(kb.press_key(0xAA), None);
+        assert_eq!(kb.release_key(0xAA), None);
+        assert_eq!(kb.release_key(0x0A), None);
 
         // Temp switch to layer c
-        assert_eq!(layers.get_remapping(0x0B, false), Some(Ignore));
-        assert_eq!(layers.get_remapping(0xCC, false), Some(Character('C')));
-        assert_eq!(layers.get_remapping(0xCC, true), Some(Character('C')));
+        assert_eq!(kb.press_key(0x0B), Some(Ignore));
+        assert_eq!(kb.press_key(0xCC), Some(Character('C')));
+        assert_eq!(kb.release_key(0xCC), Some(Character('C')));
 
         // Lock layer c
-        assert_eq!(layers.get_remapping(0xB0, false), None);
-        assert_eq!(layers.get_remapping(0xB0, true), None);
+        assert_eq!(kb.press_key(0xB0), None);
+        assert_eq!(kb.release_key(0xB0), None);
 
         // Temp switched to layer a still
-        assert_eq!(layers.get_remapping(0xAA, false), Some(Character('A')));
-        assert_eq!(layers.get_remapping(0xAA, true), Some(Character('A')));
+        assert_eq!(kb.press_key(0xAA), Some(Character('A')));
+        assert_eq!(kb.release_key(0xAA), Some(Character('A')));
 
         // Check if locked to layer c
-        assert_eq!(layers.get_remapping(0x0B, true), Some(Ignore));
-        assert_eq!(layers.get_remapping(0xCC, false), Some(Character('C')));
-        assert_eq!(layers.get_remapping(0xCC, true), Some(Character('C')));
+        assert_eq!(kb.release_key(0x0B), Some(Ignore));
+        assert_eq!(kb.press_key(0xCC), Some(Character('C')));
+        assert_eq!(kb.release_key(0xCC), Some(Character('C')));
 
         // Lock layer base again
-        assert_eq!(layers.get_remapping(0xB0, false), None);
-        assert_eq!(layers.get_remapping(0xA0, false), None);
-        assert_eq!(layers.get_remapping(0x0A, false), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x0B, false), Some(Ignore));
-        assert_eq!(layers.get_remapping(0xB0, true), None);
-        assert_eq!(layers.get_remapping(0xA0, true), None);
-        assert_eq!(layers.get_remapping(0x0A, true), Some(Ignore));
-        assert_eq!(layers.get_remapping(0x0B, true), Some(Ignore));
+        assert_eq!(kb.press_key(0xB0), None);
+        assert_eq!(kb.press_key(0xA0), None);
+        assert_eq!(kb.press_key(0x0A), Some(Ignore));
+        assert_eq!(kb.press_key(0x0B), Some(Ignore));
+        assert_eq!(kb.release_key(0xB0), None);
+        assert_eq!(kb.release_key(0xA0), None);
+        assert_eq!(kb.release_key(0x0A), Some(Ignore));
+        assert_eq!(kb.release_key(0x0B), Some(Ignore));
 
         // Check if locked to layer base
-        assert_eq!(layers.get_remapping(0xAA, false), None);
-        assert_eq!(layers.get_remapping(0xAA, true), None);
+        assert_eq!(kb.press_key(0xAA), None);
+        assert_eq!(kb.release_key(0xAA), None);
 
         Ok(())
     }
