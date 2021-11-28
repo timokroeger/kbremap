@@ -9,6 +9,7 @@ use petgraph::{algo, Directed, Graph};
 
 use crate::config::Config;
 use crate::keyboard_hook::KeyAction;
+use crate::layout::{LayouBuilder, Layout};
 
 /// An iterator over layers activated by pressed modifiers.
 ///
@@ -41,21 +42,16 @@ impl<'a> Iterator for LayerActivations<'a> {
     }
 }
 
-/// Mapping table for a virtual keyboard layer.
-#[derive(Debug)]
-struct Layer {
-    name: String,
-    mappings: HashMap<u16, KeyAction>,
-}
-
 /// A keyboard layout can be viewed as graph where layers are the nodes and
 /// modifiers (layer change keys) are the egdes.
-type LayerGraph = Graph<Layer, Vec<u16>, Directed, u8>;
+type LayerGraph = Graph<(), Vec<u16>, Directed, u8>;
 
 /// Collection of virtual keyboard layers and logic to switch between them
 /// depending on which modifier keys are pressed.
 #[derive(Debug)]
 pub struct Layers {
+    layout: Layout,
+
     layer_graph: LayerGraph,
 
     /// Set of unique scan codes used for layer switching.
@@ -72,37 +68,62 @@ pub struct Layers {
 impl Layers {
     /// Constructs the layers from a configuration.
     pub fn new(config: &Config) -> Result<Self> {
-        let mut layer_graph = Graph::default();
-
+        // TODO: move
+        let mut layout_builder = LayouBuilder::new();
         for layer in config.layer_names() {
-            layer_graph.add_node(Layer {
-                name: String::from(layer),
-                mappings: config.layer_mappings(layer),
-            });
-        }
+            let modifiers: HashMap<u16, &str> = config.layer_modifiers(layer).collect();
 
-        let mut modifiers_scan_codes = Vec::new();
-        for from in layer_graph.node_indices() {
-            for (scan_code, target_layer) in config.layer_modifiers(&layer_graph[from].name) {
-                for to in layer_graph.node_indices() {
-                    if layer_graph[to].name == target_layer {
-                        let edge = layer_graph
-                            .find_edge(from, to)
-                            .unwrap_or_else(|| layer_graph.add_edge(from, to, Vec::new()));
-                        layer_graph[edge].push(scan_code);
-                        modifiers_scan_codes.push(scan_code);
-                    }
+            for (scan_code, action) in config.layer_mappings(layer) {
+                if let Some(target_layer) = modifiers.get(&scan_code) {
+                    let vk = match action {
+                        KeyAction::Ignore => None,
+                        KeyAction::VirtualKey(vk) => Some(vk),
+                        _ => panic!("invalid modifer target"),
+                    };
+                    println!("{} --{}--> {}", layer, scan_code, target_layer);
+                    layout_builder.add_modifier(scan_code, layer, target_layer, vk);
+                } else {
+                    layout_builder.add_key(scan_code, layer, action);
                 }
             }
         }
 
+        let layout = layout_builder.build();
+
+        let mut modifiers: Vec<_> = layout.modifiers().collect();
+        modifiers.sort_by(|a, b| {
+            a.layer_from
+                .cmp(&b.layer_from)
+                .then(a.layer_to.cmp(&b.layer_to))
+        });
+
+        // Merge modifiers between identical layers into a single edge.
+        let mut edges: Vec<(u8, u8, Vec<u16>)> = Vec::new();
+        let mut modifiers_scan_codes = Vec::new();
+
+        for modifier in modifiers {
+            if !modifiers_scan_codes.contains(&modifier.scan_code) {
+                modifiers_scan_codes.push(modifier.scan_code);
+            }
+
+            match edges.last_mut() {
+                Some(last) if last.0 == modifier.layer_from && last.1 == modifier.layer_to => {
+                    last.2.push(modifier.scan_code)
+                }
+                _ => edges.push((
+                    modifier.layer_from,
+                    modifier.layer_to,
+                    vec![modifier.scan_code],
+                )),
+            }
+        }
+
+        let layer_graph = Graph::from_edges(edges);
         let base_layer =
             algo::toposort(&layer_graph, None).map_err(|_| anyhow!("Cycle in layer graph"))?[0];
 
-        // Get a set of all unique modifiers.
-        modifiers_scan_codes.dedup();
-
         Ok(Self {
+            layout,
             layer_graph,
             modifiers_scan_codes,
             base_layer,
@@ -168,10 +189,17 @@ impl Layers {
         // If we do not track active key presses the key down and key up events
         // may not be the same if the layer has changed in between.
         let remap = self.pressed_keys.remove(&scan_code).unwrap_or_else(|| {
-            self.layer_graph[self.active_layer]
-                .mappings
-                .get(&scan_code)
-                .copied()
+            let key = self.layout.get_key(scan_code);
+            key.action_on_layer(self.active_layer.index() as _)
+
+            // let mut action = None;
+            // for layer in layer_history {
+            //     if let Some(action) = key.action_on_layer(layer) {
+            //         action = Some(action);
+            //         break;
+            //     }
+            // }
+            // action
         });
 
         self.update_modifiers(scan_code, up);

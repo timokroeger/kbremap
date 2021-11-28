@@ -7,6 +7,7 @@ mod layers;
 mod resources;
 mod tray_icon;
 mod winapi_util;
+mod layout;
 
 use std::path::Path;
 use std::{env, fs};
