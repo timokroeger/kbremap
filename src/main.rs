@@ -83,7 +83,6 @@ fn main() -> Result<()> {
                         KeyAction::VirtualKey(vk) => Some(vk),
                         _ => panic!("invalid modifer target"),
                     };
-                    println!("{} --{}--> {}", layer, scan_code, target_layer);
                     layout_builder.add_modifier(scan_code, layer, target_layer, vk);
                 } else {
                     layout_builder.add_key(scan_code, layer, action);

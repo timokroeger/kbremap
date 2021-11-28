@@ -1,9 +1,15 @@
 use crate::keyboard_hook::KeyAction;
 
+/// Byte 0 of [`Key::action`] contains the virtual key
 const TAG_VIRTUAL_KEY: u8 = 0;
-const TAG_CHARACTER: u8 = 1;
-const TAG_MODIFIER: u8 = 2; // `virtual_keys[3]` contains the target layer
 
+/// [`Key::action`] are the bytes of a unicode code point
+const TAG_CHARACTER: u8 = 1;
+
+/// Byte 3 of [`Key::action`] contains the target layer
+const TAG_MODIFIER: u8 = 2;
+
+/// Compact representation of a key action.
 #[derive(Debug)]
 struct Key {
     scan_code: u16,
