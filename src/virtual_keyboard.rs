@@ -58,7 +58,7 @@ pub struct VirtualKeyboard {
 
     base_layer: NodeIndex<u8>,
     locked_layer: NodeIndex<u8>,
-    active_layer: NodeIndex<u8>,
+    layer_history: Vec<NodeIndex<u8>>,
 
     pressed_keys: HashMap<u16, Option<KeyAction>>,
     pressed_modifiers: Vec<u16>,
@@ -105,7 +105,7 @@ impl VirtualKeyboard {
             modifiers_scan_codes,
             base_layer,
             locked_layer: base_layer,
-            active_layer: base_layer,
+            layer_history: vec![base_layer],
             pressed_keys: HashMap::new(),
             pressed_modifiers: Vec::new(),
         })
@@ -140,7 +140,7 @@ impl VirtualKeyboard {
         }
 
         let mut layer_activations = self.layer_activations();
-        self.active_layer = if let Some(active_layer) = layer_activations.next() {
+        let active_layer = if let Some(active_layer) = layer_activations.next() {
             // Lock the layer if we find a second sequence for this layer
             // Example: Both shift key pressed to lock the shift layer (caps lock functionality).
             if layer_activations.any(|layer| layer == active_layer) {
@@ -150,12 +150,22 @@ impl VirtualKeyboard {
                 // Update graph with the locked layer as new base layer.
                 reverse_edges(&mut self.layer_graph, self.base_layer, active_layer);
 
+                self.layer_history.clear();
+                self.layer_history.push(active_layer);
                 self.locked_layer = active_layer;
             }
 
             active_layer
         } else {
             self.locked_layer
+        };
+
+        // Update layer history.
+        if let Some(idx) = self.layer_history.iter().rposition(|l| *l == active_layer) {
+            // Remove all layers “newer” than the active layer.
+            self.layer_history.drain(idx + 1..);
+        } else {
+            self.layer_history.push(active_layer);
         }
     }
 
@@ -167,7 +177,7 @@ impl VirtualKeyboard {
         // may not be the same if the layer has changed in between.
         let action = self.pressed_keys.remove(&scan_code).unwrap_or_else(|| {
             let key = self.layout.get_key(scan_code);
-            key.action_on_layer(self.active_layer.index() as _)
+            key.action_on_layer(self.layer_history.last().unwrap().index() as _)
 
             // let mut action = None;
             // for layer in layer_history {
@@ -352,7 +362,7 @@ mod tests {
         assert_eq!(kb.press_key(0xBB), Some(Character('B')));
         assert_eq!(kb.release_key(0xBB), Some(Character('B')));
 
-        // Release leayer b key
+        // Release layer b key
         assert_eq!(kb.release_key(0x0B), Some(Ignore));
 
         // "B" does not exist on base layer
