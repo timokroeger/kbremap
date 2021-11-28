@@ -108,12 +108,16 @@ impl Layout {
             .keys
             .binary_search_by_key(&scan_code, |k| k.scan_code)
             .unwrap_or_else(|idx| idx);
-        let len = self.keys[idx..]
+        let n_before = self.keys[..idx]
+            .iter().rev()
+            .take_while(|k| k.scan_code == scan_code)
+            .count();
+        let n_after = self.keys[idx..]
             .iter()
             .take_while(|k| k.scan_code == scan_code)
             .count();
         KeyResults {
-            keys: &self.keys[idx..idx + len],
+            keys: &self.keys[idx - n_before..idx + n_after],
         }
     }
 
