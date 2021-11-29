@@ -1,8 +1,7 @@
 //! Remapping and layer switching logic.
 
-use std::collections::HashMap;
-
 use anyhow::{anyhow, Result};
+use map_vec::{Map, Set};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::{algo, Directed, Graph};
@@ -54,13 +53,13 @@ pub struct VirtualKeyboard {
     layer_graph: LayerGraph,
 
     /// Set of unique scan codes used for layer switching.
-    modifiers_scan_codes: Vec<u16>,
+    modifiers_scan_codes: Set<u16>,
 
     base_layer: NodeIndex<u8>,
     locked_layer: NodeIndex<u8>,
     layer_history: Vec<NodeIndex<u8>>,
 
-    pressed_keys: HashMap<u16, Option<KeyAction>>,
+    pressed_keys: Map<u16, Option<KeyAction>>,
     pressed_modifiers: Vec<u16>,
 }
 
@@ -76,13 +75,11 @@ impl VirtualKeyboard {
 
         // Merge modifiers between identical layers into a single edge.
         let mut edges: Vec<(u8, u8, Vec<u16>)> = Vec::new();
-        let mut modifiers_scan_codes = Vec::new();
+        let mut modifiers_scan_codes = Set::new();
 
         for modifier in modifiers {
-            if !modifiers_scan_codes.contains(&modifier.scan_code) {
-                modifiers_scan_codes.push(modifier.scan_code);
-            }
-
+            modifiers_scan_codes.insert(modifier.scan_code);
+ 
             match edges.last_mut() {
                 Some(last) if last.0 == modifier.layer_from && last.1 == modifier.layer_to => {
                     last.2.push(modifier.scan_code)
@@ -106,7 +103,7 @@ impl VirtualKeyboard {
             base_layer,
             locked_layer: base_layer,
             layer_history: vec![base_layer],
-            pressed_keys: HashMap::new(),
+            pressed_keys: Map::new(),
             pressed_modifiers: Vec::new(),
         })
     }
