@@ -198,17 +198,13 @@ impl VirtualKeyboard {
         let action = self.pressed_keys.remove(&scan_code).unwrap_or_else(|| {
             let key = self.layout.get_key(scan_code);
 
-            // Get the key action from the current layer or from the previous layer
-            // if it is not availble on the currently active layer.
-            // Repeat until a action was found or we run out of layers.
-            let mut action = None;
-            for layer in self.layer_history.iter().rev() {
-                if let Some(a) = key.action_on_layer(layer.index() as _) {
-                    action = Some(a);
-                    break;
-                }
-            }
-            action
+            // Get the key action from the current layer. If the key is not available on
+            // the current layer, check the previous layer. Repeat until a action was
+            // found or we run out of layers.
+            self.layer_history
+                .iter()
+                .rev()
+                .find_map(|layer| key.action_on_layer(layer.index() as _))
         });
 
         self.update_modifiers(scan_code, false);
