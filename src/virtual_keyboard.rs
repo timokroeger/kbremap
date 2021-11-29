@@ -150,6 +150,15 @@ impl VirtualKeyboard {
                 // Update graph with the locked layer as new base layer.
                 reverse_edges(&mut self.layer_graph, self.base_layer, active_layer);
 
+                // Jump back in history if this layer was locked before.
+                if let Some(idx) = self
+                    .layer_history
+                    .iter()
+                    .position(|layer| *layer == active_layer)
+                {
+                    self.layer_history.drain(idx + 1..);
+                }
+
                 self.locked_layer = active_layer;
             }
 
@@ -158,8 +167,21 @@ impl VirtualKeyboard {
             self.locked_layer
         };
 
+        // When the active layer has changed search for it in the history but stop at the locked layer.
+        let mut layer_idx = None;
+        for idx in (0..self.layer_history.len()).rev() {
+            if self.layer_history[idx] == active_layer {
+                layer_idx = Some(idx);
+                break;
+            }
+
+            if self.layer_history[idx] == self.locked_layer {
+                break;
+            }
+        }
+
         // Update layer history.
-        if let Some(idx) = self.layer_history.iter().rposition(|l| *l == active_layer) {
+        if let Some(idx) = layer_idx {
             // Remove all layers “newer” than the active layer.
             self.layer_history.drain(idx + 1..);
         } else {
@@ -455,7 +477,8 @@ mod tests {
             .add_modifier(0xC0, "b", "c", None)
             .add_key(0x01, "b", Character('B'))
             .add_key(0x02, "b", Character('B'))
-            .add_key(0x01, "c", Character('C'));
+            .add_key(0x01, "c", Character('C'))
+            .add_key(0x04, "c", Character('C'));
         let layout = layout.build();
         let mut kb = VirtualKeyboard::new(layout)?;
 
@@ -488,6 +511,43 @@ mod tests {
         assert_eq!(kb.release_key(0x01), Some(Character('C')));
         assert_eq!(kb.press_key(0x02), Some(Character('B')));
         assert_eq!(kb.release_key(0x02), Some(Character('B')));
+        assert_eq!(kb.press_key(0x03), Some(Character('A')));
+        assert_eq!(kb.release_key(0x03), Some(Character('A')));
+        assert_eq!(kb.press_key(0x04), Some(Character('C')));
+        assert_eq!(kb.release_key(0x04), Some(Character('C')));
+
+        // Lock layer c
+        assert_eq!(kb.press_key(0xB0), Some(Ignore));
+        assert_eq!(kb.press_key(0xC0), Some(Ignore));
+
+        // Release all but on modifier to activate layer b
+        assert_eq!(kb.release_key(0xB0), Some(Ignore));
+        assert_eq!(kb.release_key(0x0B), Some(Ignore));
+        assert_eq!(kb.release_key(0x0C), Some(Ignore));
+
+        dbg!(&kb.locked_layer);
+        dbg!(&kb.layer_history);
+
+        // Layer c
+        assert_eq!(kb.press_key(0x01), Some(Character('B')));
+        assert_eq!(kb.release_key(0x01), Some(Character('B')));
+        assert_eq!(kb.press_key(0x02), Some(Character('B')));
+        assert_eq!(kb.release_key(0x02), Some(Character('B')));
+        assert_eq!(kb.press_key(0x03), Some(Character('A')));
+        assert_eq!(kb.release_key(0x03), Some(Character('A')));
+        // Should be transparent to layer c now
+        assert_eq!(kb.press_key(0x04), Some(Character('C')));
+        assert_eq!(kb.release_key(0x04), Some(Character('C')));
+
+        // Lock layer a again
+        assert_eq!(kb.press_key(0xB0), Some(Ignore));
+        assert_eq!(kb.press_key(0x0C), Some(Ignore));
+        assert_eq!(kb.press_key(0x0B), Some(Ignore));
+
+        assert_eq!(kb.press_key(0x01), Some(Character('A')));
+        assert_eq!(kb.release_key(0x01), Some(Character('A')));
+        assert_eq!(kb.press_key(0x02), Some(Character('A')));
+        assert_eq!(kb.release_key(0x02), Some(Character('A')));
         assert_eq!(kb.press_key(0x03), Some(Character('A')));
         assert_eq!(kb.release_key(0x03), Some(Character('A')));
         assert_eq!(kb.press_key(0x04), None);
