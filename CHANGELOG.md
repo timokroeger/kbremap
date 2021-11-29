@@ -5,6 +5,9 @@
 ### Added
 - Layer locking #32
 
+### Changed
+- Make layers transparent. When a key has no action defined, check the previous layer. #34
+
 ### Fixed
 - The base layer can now have any name
 
