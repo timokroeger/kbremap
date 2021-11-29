@@ -79,7 +79,7 @@ impl VirtualKeyboard {
 
         for modifier in modifiers {
             modifiers_scan_codes.insert(modifier.scan_code);
- 
+
             match edges.last_mut() {
                 Some(last) if last.0 == modifier.layer_from && last.1 == modifier.layer_to => {
                     last.2.push(modifier.scan_code)
@@ -116,26 +116,7 @@ impl VirtualKeyboard {
         }
     }
 
-    /// Checks if the key is a modifier and updates the active layer accordingly.
-    fn update_modifiers(&mut self, scan_code: u16, up: bool) {
-        if !self.modifiers_scan_codes.contains(&scan_code) {
-            return;
-        }
-
-        let active_idx = self
-            .pressed_modifiers
-            .iter()
-            .rposition(|&pressed_scan_code| pressed_scan_code == scan_code);
-        match (active_idx, up) {
-            (None, false) => {
-                self.pressed_modifiers.push(scan_code);
-            }
-            (Some(idx), true) => {
-                self.pressed_modifiers.remove(idx);
-            }
-            _ => return, // Ignore repeated key presses
-        }
-
+    fn update_active_layer(&mut self) {
         let mut layer_activations = self.layer_activations();
         let active_layer = if let Some(active_layer) = layer_activations.next() {
             // Lock the layer if we find a second sequence for this layer
@@ -186,6 +167,26 @@ impl VirtualKeyboard {
         }
     }
 
+    fn press_modifier(&mut self, scan_code: u16) {
+        if self.pressed_modifiers.last() == Some(&scan_code) {
+            // Ignore repeated key presses
+            return;
+        }
+
+        if let Some(idx) = self
+            .pressed_modifiers
+            .iter()
+            .position(|pressed_scan_code| *pressed_scan_code == scan_code)
+        {
+            // We must have missed a key release event.
+            // Remove the previously pressed entry.
+            self.pressed_modifiers.remove(idx);
+        }
+
+        self.pressed_modifiers.push(scan_code);
+        self.update_active_layer();
+    }
+
     /// Returs the key action associated with the scan code press.
     pub fn press_key(&mut self, scan_code: u16) -> Option<KeyAction> {
         // Get the active action if the key is already pressed so that we can
@@ -204,14 +205,24 @@ impl VirtualKeyboard {
                 .find_map(|layer| key.action_on_layer(layer.index() as _))
         });
 
-        self.update_modifiers(scan_code, false);
+        if self.modifiers_scan_codes.contains(&scan_code) {
+            self.press_modifier(scan_code);
+        }
         self.pressed_keys.insert(scan_code, action);
         action
     }
 
     /// Returs the key action associated with the scan code release.
     pub fn release_key(&mut self, scan_code: u16) -> Option<KeyAction> {
-        self.update_modifiers(scan_code, true);
+        // Release from pressed modifiers if it was one.
+        if let Some(idx) = self
+            .pressed_modifiers
+            .iter()
+            .rposition(|pressed_scan_code| *pressed_scan_code == scan_code)
+        {
+            self.pressed_modifiers.remove(idx);
+            self.update_active_layer();
+        }
 
         // Release the pressed key, or ignore it when the key was released without
         // it being pressed before.
