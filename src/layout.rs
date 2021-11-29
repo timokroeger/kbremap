@@ -116,6 +116,7 @@ impl Layout {
                 .keys
                 .binary_search_by_key(&scan_code, |k| k.scan_code)
                 .unwrap_or_else(|idx| idx),
+            scan_code,
         }
     }
 
@@ -134,19 +135,18 @@ impl Layout {
 pub struct KeyResults<'a> {
     keys: &'a [Key],
     idx: usize,
+    scan_code: u16,
 }
 
 impl<'a> KeyResults<'a> {
     pub fn action_on_layer(&self, layer: u8) -> Option<KeyAction> {
-        let scan_code = self.keys.get(self.idx)?.scan_code;
-
         let iter_back = self.keys[..self.idx]
             .iter()
             .rev()
-            .take_while(|k| k.scan_code == scan_code);
+            .take_while(|k| k.scan_code == self.scan_code);
         let iter_forward = self.keys[self.idx..]
             .iter()
-            .take_while(|k| k.scan_code == scan_code);
+            .take_while(|k| k.scan_code == self.scan_code);
         let mut iter = iter_back.chain(iter_forward);
 
         let key = iter.find(|k| k.layer == layer)?;
