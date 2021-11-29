@@ -3,20 +3,24 @@
 
 mod config;
 mod keyboard_hook;
-mod layers;
+mod layout;
 mod resources;
 mod tray_icon;
+mod virtual_keyboard;
 mod winapi_util;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::{env, fs};
 
 use anyhow::Result;
 use config::Config;
 use keyboard_hook::KeyboardHook;
-use layers::Layers;
+use layout::LayoutBuilder;
 use tracing::Level;
+use virtual_keyboard::VirtualKeyboard;
 
+use crate::keyboard_hook::KeyAction;
 use crate::tray_icon::TrayIcon;
 
 /// Custom keyboard layouts for windows.
@@ -60,21 +64,46 @@ fn main() -> Result<()> {
         .with_target(false)
         .init();
 
+    native_windows_gui::init()?;
+    let ui = TrayIcon::new(console_available)?;
+
     let args: CommandLineArguments = argh::from_env();
 
     let config = load_config(args.config.as_deref().unwrap_or("config.toml"))?;
 
-    native_windows_gui::init()?;
-    let ui = TrayIcon::new(console_available)?;
+    let layout = {
+        let mut layout_builder = LayoutBuilder::new();
+        for layer in config.layer_names() {
+            let modifiers: HashMap<u16, &str> = config.layer_modifiers(layer).collect();
 
-    let mut layers = Layers::new(&config)?;
+            for (scan_code, action) in config.layer_mappings(layer) {
+                if let Some(target_layer) = modifiers.get(&scan_code) {
+                    let vk = match action {
+                        KeyAction::Ignore => None,
+                        KeyAction::VirtualKey(vk) => Some(vk),
+                        _ => panic!("invalid modifer target"),
+                    };
+                    layout_builder.add_modifier(scan_code, layer, target_layer, vk);
+                } else {
+                    layout_builder.add_key(scan_code, layer, action);
+                }
+            }
+        }
+        layout_builder.build()
+    };
+
+    let mut kb = VirtualKeyboard::new(layout)?;
 
     let kbhook = KeyboardHook::set(|key| {
         if !ui.is_enabled() {
             return None;
         }
 
-        layers.get_remapping(key.scan_code, key.up)
+        if key.up {
+            kb.release_key(key.scan_code)
+        } else {
+            kb.press_key(key.scan_code)
+        }
     });
     kbhook.disable_caps_lock(config.disable_caps_lock);
 
