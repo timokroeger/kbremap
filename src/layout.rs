@@ -110,21 +110,12 @@ pub struct Layout {
 
 impl Layout {
     pub fn get_key(&self, scan_code: u16) -> KeyResults<'_> {
-        let idx = self
-            .keys
-            .binary_search_by_key(&scan_code, |k| k.scan_code)
-            .unwrap_or_else(|idx| idx);
-        let n_before = self.keys[..idx]
-            .iter()
-            .rev()
-            .take_while(|k| k.scan_code == scan_code)
-            .count();
-        let n_after = self.keys[idx..]
-            .iter()
-            .take_while(|k| k.scan_code == scan_code)
-            .count();
         KeyResults {
-            keys: &self.keys[idx - n_before..idx + n_after],
+            keys: &self.keys,
+            idx: self
+                .keys
+                .binary_search_by_key(&scan_code, |k| k.scan_code)
+                .unwrap_or_else(|idx| idx),
         }
     }
 
@@ -142,11 +133,23 @@ impl Layout {
 
 pub struct KeyResults<'a> {
     keys: &'a [Key],
+    idx: usize,
 }
 
 impl<'a> KeyResults<'a> {
     pub fn action_on_layer(&self, layer: u8) -> Option<KeyAction> {
-        let key = self.keys.iter().find(|k| k.layer == layer)?;
+        let scan_code = self.keys.get(self.idx)?.scan_code;
+
+        let iter_back = self.keys[..self.idx]
+            .iter()
+            .rev()
+            .take_while(|k| k.scan_code == scan_code);
+        let iter_forward = self.keys[self.idx..]
+            .iter()
+            .take_while(|k| k.scan_code == scan_code);
+        let mut iter = iter_back.chain(iter_forward);
+
+        let key = iter.find(|k| k.layer == layer)?;
         let action = match key.tag {
             TAG_VIRTUAL_KEY | TAG_MODIFIER => match key.action[0] {
                 0 => KeyAction::Ignore,
