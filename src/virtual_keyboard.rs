@@ -235,9 +235,10 @@ fn reverse_edges(graph: &mut LayerGraph, from: NodeIndex<u8>, to: NodeIndex<u8>)
 
     // Reverse the edge
     for [from, to] in edges {
-        let edge = graph.find_edge(from, to).unwrap();
-        let scan_code = graph.remove_edge(edge).unwrap();
-        graph.add_edge(to, from, scan_code);
+        if let Some(edge) = graph.find_edge(from, to) {
+            let scan_code = graph.remove_edge(edge).unwrap();
+            graph.add_edge(to, from, scan_code);
+        }
     }
 }
 
@@ -548,6 +549,41 @@ mod tests {
         assert_eq!(kb.release_key(0x03), Some(Character('A')));
         assert_eq!(kb.press_key(0x04), None);
         assert_eq!(kb.release_key(0x04), None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn layer_lock_shared_path() -> anyhow::Result<()> {
+        let mut layout = LayoutBuilder::new();
+        layout
+            .add_modifier(0x0A, "base", "a", None)
+            .add_modifier(0xA0, "base", "a", None)
+            .add_modifier(0xAB, "a", "b", None)
+            .add_modifier(0xAC, "a", "c", None)
+            .add_modifier(0xBD, "b", "d", None)
+            .add_modifier(0xCD, "c", "d", None)
+            .add_key(0xFF, "d", Character('X'));
+        let layout = layout.build();
+        let mut kb = VirtualKeyboard::new(layout)?;
+
+        // Just make sure it does not panic.
+        kb.press_key(0x0A);
+        kb.press_key(0xAB);
+        kb.press_key(0xBD);
+        kb.press_key(0xA0);
+        kb.press_key(0xAC);
+        kb.press_key(0xCD);
+        kb.release_key(0x0A);
+        kb.release_key(0xAB);
+        kb.release_key(0xBD);
+        kb.release_key(0xA0);
+        kb.release_key(0xAC);
+        kb.release_key(0xCD);
+
+        // Check if locked
+        assert_eq!(kb.press_key(0xFF), Some(Character('X')));
+        assert_eq!(kb.release_key(0xFF), Some(Character('X')));
 
         Ok(())
     }
