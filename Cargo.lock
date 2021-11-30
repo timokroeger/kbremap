@@ -140,6 +140,7 @@ dependencies = [
  "anyhow",
  "argh",
  "encode_unicode",
+ "map_vec",
  "native-windows-gui",
  "petgraph",
  "serde",
@@ -177,6 +178,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51b9bbe6c47d51fc3e1a9b945965946b4c44142ab8792c50835a980d362c2710"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "map_vec"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43e9839b06bd5129fa636a93cb53601ffae739b8ff115841374d110cafb02cad"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
