@@ -35,6 +35,10 @@ enum MappingTarget {
         layer: String,
         virtual_key: Option<u8>,
     },
+    LayerLock {
+        layer_lock: String,
+        virtual_key: Option<u8>,
+    },
 }
 
 impl Config {
@@ -72,6 +76,17 @@ impl Config {
                         virtual_key,
                     } => {
                         layout_builder.add_modifier(
+                            mapping.scan_code,
+                            layer,
+                            target_layer,
+                            *virtual_key,
+                        );
+                    }
+                    MappingTarget::LayerLock {
+                        layer_lock: target_layer,
+                        virtual_key,
+                    } => {
+                        layout_builder.add_layer_lock(
                             mapping.scan_code,
                             layer,
                             target_layer,

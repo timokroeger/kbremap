@@ -410,9 +410,13 @@ mod tests {
             .add_key(0xFF, "base", Character('X'))
             .add_modifier(0x0B, "a", "c", None)
             .add_modifier(0xB0, "a", "c", None)
+            .add_layer_lock(0x0A, "a", "a", None)
+            .add_layer_lock(0xA0, "a", "a", None)
             .add_key(0xFF, "a", Character('A'))
             .add_modifier(0x0A, "b", "c", None)
             .add_modifier(0xA0, "b", "c", None)
+            .add_layer_lock(0x0B, "c", "c", None)
+            .add_layer_lock(0xB0, "c", "c", None)
             .add_key(0xFF, "b", Character('B'))
             .add_key(0xFF, "c", Character('C'));
         let layout = layout.build();
@@ -571,6 +575,12 @@ mod tests {
             .add_modifier(0xAC, "a", "c", None)
             .add_modifier(0xBD, "b", "d", None)
             .add_modifier(0xCD, "c", "d", None)
+            .add_layer_lock(0x0A, "d", "d", None)
+            .add_layer_lock(0xAB, "d", "d", None)
+            .add_layer_lock(0xBD, "d", "d", None)
+            .add_layer_lock(0xA0, "d", "d", None)
+            .add_layer_lock(0xAC, "d", "d", None)
+            .add_layer_lock(0xCD, "d", "d", None)
             .add_key(0xFF, "d", Character('X'));
         let layout = layout.build();
         let mut kb = VirtualKeyboard::new(layout)?;

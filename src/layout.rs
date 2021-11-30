@@ -1,13 +1,16 @@
 use crate::keyboard_hook::KeyAction;
 
-/// Byte 0 of [`Key::action`] contains the virtual key
+/// Byte 0 of [`Key::action`] contains the virtual key.
 const TAG_VIRTUAL_KEY: u8 = 0;
 
-/// [`Key::action`] are the bytes of a unicode code point
+/// [`Key::action`] are the bytes of a unicode code point.
 const TAG_CHARACTER: u8 = 1;
 
-/// Byte 3 of [`Key::action`] contains the target layer
+/// Changes the active layer. Byte 3 of [`Key::action`] contains the target layer.
 const TAG_MODIFIER: u8 = 2;
+
+/// Locks the current layer. Byte 3 of [`Key::action`] contains the target layer.
+const TAG_LAYER_LOCK: u8 = 3;
 
 /// Compact representation of a key action.
 #[derive(Debug)]
@@ -86,6 +89,25 @@ impl LayoutBuilder {
         self
     }
 
+    pub fn add_layer_lock(
+        &mut self,
+        scan_code: u16,
+        layer: &str,
+        target_layer: &str,
+        vk: Option<u8>,
+    ) -> &mut Self {
+        let layer = self.add_or_get_layer(layer);
+        let target_layer = self.add_or_get_layer(target_layer);
+        let key = Key {
+            scan_code,
+            layer,
+            tag: TAG_LAYER_LOCK,
+            action: [vk.unwrap_or(0), 0, 0, target_layer],
+        };
+        self.keys.push(key);
+        self
+    }
+
     pub fn build(mut self) -> Layout {
         self.keys.sort_by_key(|k| k.scan_code);
         Layout {
@@ -130,6 +152,17 @@ impl Layout {
                 layer_to: k.action[3],
             })
     }
+
+    pub fn layer_locks(&self) -> impl Iterator<Item = Modifier> + '_ {
+        self.keys
+            .iter()
+            .filter(|k| k.tag == TAG_LAYER_LOCK)
+            .map(|k| Modifier {
+                scan_code: k.scan_code,
+                layer_from: k.layer,
+                layer_to: k.action[3],
+            })
+    }
 }
 
 pub struct KeyResults<'a> {
@@ -151,7 +184,7 @@ impl<'a> KeyResults<'a> {
 
         let key = iter.find(|k| k.layer == layer)?;
         let action = match key.tag {
-            TAG_VIRTUAL_KEY | TAG_MODIFIER => match key.action[0] {
+            TAG_VIRTUAL_KEY | TAG_MODIFIER | TAG_LAYER_LOCK => match key.action[0] {
                 0 => KeyAction::Ignore,
                 vk => KeyAction::VirtualKey(vk),
             },
