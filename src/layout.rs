@@ -13,7 +13,7 @@ const TAG_MODIFIER: u8 = 2;
 const TAG_LAYER_LOCK: u8 = 3;
 
 /// Compact representation of a key action.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct Key {
     scan_code: u16,
     layer: u8,
@@ -172,7 +172,7 @@ pub struct KeyResults<'a> {
 }
 
 impl<'a> KeyResults<'a> {
-    pub fn action_on_layer(&self, layer: u8) -> Option<KeyAction> {
+    fn key_on_layer(&self, layer: u8) -> Option<Key> {
         let iter_back = self.keys[..self.idx]
             .iter()
             .rev()
@@ -180,9 +180,14 @@ impl<'a> KeyResults<'a> {
         let iter_forward = self.keys[self.idx..]
             .iter()
             .take_while(|k| k.scan_code == self.scan_code);
-        let mut iter = iter_back.chain(iter_forward);
+        iter_back
+            .chain(iter_forward)
+            .find(|k| k.layer == layer)
+            .copied()
+    }
 
-        let key = iter.find(|k| k.layer == layer)?;
+    pub fn action(&self, layer: u8) -> Option<KeyAction> {
+        let key = self.key_on_layer(layer)?;
         let action = match key.tag {
             TAG_VIRTUAL_KEY | TAG_MODIFIER | TAG_LAYER_LOCK => match key.action[0] {
                 0 => KeyAction::Ignore,
@@ -194,5 +199,13 @@ impl<'a> KeyResults<'a> {
             _ => unreachable!(),
         };
         Some(action)
+    }
+
+    pub fn layer_lock(&self, layer: u8) -> Option<u8> {
+        let key = self.key_on_layer(layer)?;
+        match key.tag {
+            TAG_LAYER_LOCK => Some(key.action[3]),
+            _ => None,
+        }
     }
 }

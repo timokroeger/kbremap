@@ -9,37 +9,6 @@ use petgraph::{algo, Directed, Graph};
 use crate::keyboard_hook::KeyAction;
 use crate::layout::Layout;
 
-/// An iterator over layers activated by pressed modifiers.
-///
-/// This struct is created by [`Layers::layer_activations`].
-struct LayerActivations<'a> {
-    layers: &'a VirtualKeyboard,
-    idx: usize,
-}
-
-impl<'a> Iterator for LayerActivations<'a> {
-    type Item = NodeIndex<u8>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let layers = self.layers;
-
-        let mut layer = None;
-        for i in self.idx..layers.pressed_modifiers.len() {
-            if let Some(edge) = layers
-                .layer_graph
-                .edges(layer.unwrap_or(layers.locked_layer))
-                .find(|edge| edge.weight().contains(&layers.pressed_modifiers[i]))
-            {
-                layer = Some(edge.target());
-                self.idx = i + 1;
-            } else {
-                continue;
-            }
-        }
-        layer
-    }
-}
-
 /// A keyboard layout can be viewed as graph where layers are the nodes and
 /// modifiers (layer change keys) are the egdes.
 type LayerGraph = Graph<(), Vec<u16>, Directed, u8>;
@@ -50,6 +19,7 @@ type LayerGraph = Graph<(), Vec<u16>, Directed, u8>;
 pub struct VirtualKeyboard {
     layout: Layout,
 
+    layer_graph_base: LayerGraph,
     layer_graph: LayerGraph,
 
     /// Set of unique scan codes used for layer switching.
@@ -92,12 +62,17 @@ impl VirtualKeyboard {
             }
         }
 
-        let layer_graph = Graph::from_edges(edges);
+        for lock_modifiers in layout.layer_locks() {
+            modifiers_scan_codes.insert(lock_modifiers.scan_code);
+        }
+
+        let layer_graph: LayerGraph = Graph::from_edges(edges);
         let base_layer =
             algo::toposort(&layer_graph, None).map_err(|_| anyhow!("Cycle in layer graph"))?[0];
 
         Ok(Self {
             layout,
+            layer_graph_base: layer_graph.clone(),
             layer_graph,
             modifiers_scan_codes,
             base_layer,
@@ -108,47 +83,37 @@ impl VirtualKeyboard {
         })
     }
 
-    /// Creates an iterator over layers activated by the currently pressed modifier keys.
-    fn layer_activations(&self) -> LayerActivations {
-        LayerActivations {
-            layers: self,
-            idx: 0,
+    fn active_layer(&self) -> NodeIndex<u8> {
+        self.layer_history[self.layer_history.len() - 1]
+    }
+
+    /// Returns the layer activated by the currently pressed modifier keys.
+    fn find_layer_activation(
+        &self,
+        graph: &LayerGraph,
+        base_layer: NodeIndex<u8>,
+    ) -> NodeIndex<u8> {
+        let mut layer = base_layer;
+        for i in 0..self.pressed_modifiers.len() {
+            if let Some(edge) = graph
+                .edges(layer)
+                .find(|edge| edge.weight().contains(&self.pressed_modifiers[i]))
+            {
+                layer = edge.target();
+            } else {
+                continue;
+            }
         }
+        layer
     }
 
     fn update_active_layer(&mut self) {
-        let mut layer_activations = self.layer_activations();
-        let active_layer = if let Some(active_layer) = layer_activations.next() {
-            // Lock the layer if we find a second sequence for this layer
-            // Example: Both shift key pressed to lock the shift layer (caps lock functionality).
-            if layer_activations.any(|layer| layer == active_layer) {
-                // Restore original graph when a layer was locked already.
-                reverse_edges(&mut self.layer_graph, self.locked_layer, self.base_layer);
-
-                // Update graph with the locked layer as new base layer.
-                reverse_edges(&mut self.layer_graph, self.base_layer, active_layer);
-
-                // Jump back in history if this layer was locked before.
-                if let Some(idx) = self
-                    .layer_history
-                    .iter()
-                    .position(|layer| *layer == active_layer)
-                {
-                    self.layer_history.drain(idx + 1..);
-                }
-
-                self.locked_layer = active_layer;
-            }
-
-            active_layer
-        } else {
-            self.locked_layer
-        };
+        let new_active_layer = self.find_layer_activation(&self.layer_graph, self.locked_layer);
 
         // When the active layer has changed search for it in the history but stop at the locked layer.
         let mut layer_idx = None;
         for idx in (0..self.layer_history.len()).rev() {
-            if self.layer_history[idx] == active_layer {
+            if self.layer_history[idx] == new_active_layer {
                 layer_idx = Some(idx);
                 break;
             }
@@ -163,8 +128,27 @@ impl VirtualKeyboard {
             // Remove all layers “newer” than the active layer.
             self.layer_history.drain(idx + 1..);
         } else {
-            self.layer_history.push(active_layer);
+            self.layer_history.push(new_active_layer);
         }
+    }
+
+    pub fn lock_layer(&mut self, lock_layer: NodeIndex<u8>) {
+        self.layer_graph.clone_from(&self.layer_graph_base);
+
+        // Update graph with the locked layer as new base layer.
+        reverse_edges(&mut self.layer_graph, self.base_layer, lock_layer);
+
+        // Jump back in history if this layer was locked before.
+        if let Some(idx) = self
+            .layer_history
+            .iter()
+            .position(|layer| *layer == lock_layer)
+        {
+            self.layer_history.drain(idx + 1..);
+        }
+
+        self.locked_layer = lock_layer;
+        self.update_active_layer();
     }
 
     fn press_modifier(&mut self, scan_code: u16) {
@@ -202,13 +186,14 @@ impl VirtualKeyboard {
             self.layer_history
                 .iter()
                 .rev()
-                .find_map(|layer| key.action_on_layer(layer.index() as _))
+                .find_map(|layer| key.action(layer.index() as _))
         });
 
         if self.modifiers_scan_codes.contains(&scan_code) {
             self.press_modifier(scan_code);
         }
         self.pressed_keys.insert(scan_code, action);
+
         action
     }
 
@@ -222,6 +207,22 @@ impl VirtualKeyboard {
         {
             self.pressed_modifiers.remove(idx);
             self.update_active_layer();
+
+            // Update layer locks on release. If we changed the lock state on press,
+            // a repeated key event would unlock the layer again right away.
+            let key = self.layout.get_key(scan_code);
+            if let Some(lock_layer) = key.layer_lock(self.active_layer().index() as u8) {
+                self.lock_layer(NodeIndex::new(lock_layer.into()));
+            } else if self.locked_layer != self.base_layer {
+                // Try to unlock a previously locked layer
+                let active_layer_from_base =
+                    self.find_layer_activation(&self.layer_graph_base, self.base_layer);
+                if key.layer_lock(active_layer_from_base.index() as u8)
+                    == Some(self.locked_layer.index() as u8)
+                {
+                    self.lock_layer(self.base_layer);
+                }
+            }
         }
 
         // Release the pressed key, or ignore it when the key was released without
@@ -415,9 +416,13 @@ mod tests {
             .add_key(0xFF, "a", Character('A'))
             .add_modifier(0x0A, "b", "c", None)
             .add_modifier(0xA0, "b", "c", None)
+            .add_layer_lock(0x0B, "b", "b", None)
+            .add_layer_lock(0xB0, "b", "b", None)
+            .add_key(0xFF, "b", Character('B'))
+            .add_layer_lock(0x0A, "c", "c", None)
+            .add_layer_lock(0xA0, "c", "c", None)
             .add_layer_lock(0x0B, "c", "c", None)
             .add_layer_lock(0xB0, "c", "c", None)
-            .add_key(0xFF, "b", Character('B'))
             .add_key(0xFF, "c", Character('C'));
         let layout = layout.build();
         let mut kb = VirtualKeyboard::new(layout)?;
@@ -456,15 +461,13 @@ mod tests {
         assert_eq!(kb.press_key(0xFF), Some(Character('C')));
         assert_eq!(kb.release_key(0xFF), Some(Character('C')));
 
-        // Lock layer base again
-        assert_eq!(kb.press_key(0xB0), Some(Ignore));
+        // Unlock layer c
         assert_eq!(kb.press_key(0xA0), Some(Ignore));
+        assert_eq!(kb.press_key(0xB0), Some(Ignore));
         assert_eq!(kb.press_key(0x0A), Some(Ignore));
-        assert_eq!(kb.press_key(0x0B), Some(Ignore));
+        assert_eq!(kb.release_key(0x0A), Some(Ignore));
         assert_eq!(kb.release_key(0xB0), Some(Ignore));
         assert_eq!(kb.release_key(0xA0), Some(Ignore));
-        assert_eq!(kb.release_key(0x0A), Some(Ignore));
-        assert_eq!(kb.release_key(0x0B), Some(Ignore));
 
         // Check if locked to layer base
         assert_eq!(kb.press_key(0xFF), Some(Character('X')));
@@ -477,15 +480,14 @@ mod tests {
     fn transparency() -> anyhow::Result<()> {
         let mut layout = LayoutBuilder::new();
         layout
-            .add_modifier(0x0B, "a", "b", None)
-            .add_modifier(0xB0, "a", "b", None)
+            .add_modifier(0xAB, "a", "b", None)
             .add_key(0x01, "a", Character('A'))
             .add_key(0x02, "a", Character('A'))
             .add_key(0x03, "a", Character('A'))
-            .add_modifier(0x0C, "b", "c", None)
-            .add_modifier(0xC0, "b", "c", None)
+            .add_modifier(0xBC, "b", "c", None)
             .add_key(0x01, "b", Character('B'))
             .add_key(0x02, "b", Character('B'))
+            .add_layer_lock(0xCC, "c", "c", None)
             .add_key(0x01, "c", Character('C'))
             .add_key(0x04, "c", Character('C'));
         let layout = layout.build();
@@ -501,7 +503,7 @@ mod tests {
         assert_eq!(kb.press_key(0x04), None);
         assert_eq!(kb.release_key(0x04), None);
 
-        assert_eq!(kb.press_key(0x0B), Some(Ignore));
+        assert_eq!(kb.press_key(0xAB), Some(Ignore));
 
         // Layer b
         assert_eq!(kb.press_key(0x01), Some(Character('B')));
@@ -513,7 +515,7 @@ mod tests {
         assert_eq!(kb.press_key(0x04), None);
         assert_eq!(kb.release_key(0x04), None);
 
-        assert_eq!(kb.press_key(0x0C), Some(Ignore));
+        assert_eq!(kb.press_key(0xBC), Some(Ignore));
 
         // Layer c
         assert_eq!(kb.press_key(0x01), Some(Character('C')));
@@ -526,20 +528,14 @@ mod tests {
         assert_eq!(kb.release_key(0x04), Some(Character('C')));
 
         // Lock layer c
-        assert_eq!(kb.press_key(0xB0), Some(Ignore));
-        assert_eq!(kb.press_key(0xC0), Some(Ignore));
-
-        // Release all but on modifier to activate layer b
-        assert_eq!(kb.release_key(0xB0), Some(Ignore));
-        assert_eq!(kb.release_key(0x0B), Some(Ignore));
-        assert_eq!(kb.release_key(0x0C), Some(Ignore));
-
-        dbg!(&kb.locked_layer);
-        dbg!(&kb.layer_history);
+        assert_eq!(kb.press_key(0xCC), Some(Ignore));
+        assert_eq!(kb.release_key(0xCC), Some(Ignore));
+        assert_eq!(kb.release_key(0xBC), Some(Ignore));
+        assert_eq!(kb.release_key(0xAB), Some(Ignore));
 
         // Layer c
-        assert_eq!(kb.press_key(0x01), Some(Character('B')));
-        assert_eq!(kb.release_key(0x01), Some(Character('B')));
+        assert_eq!(kb.press_key(0x01), Some(Character('C')));
+        assert_eq!(kb.release_key(0x01), Some(Character('C')));
         assert_eq!(kb.press_key(0x02), Some(Character('B')));
         assert_eq!(kb.release_key(0x02), Some(Character('B')));
         assert_eq!(kb.press_key(0x03), Some(Character('A')));
@@ -548,10 +544,13 @@ mod tests {
         assert_eq!(kb.press_key(0x04), Some(Character('C')));
         assert_eq!(kb.release_key(0x04), Some(Character('C')));
 
-        // Lock layer a again
-        assert_eq!(kb.press_key(0xB0), Some(Ignore));
-        assert_eq!(kb.press_key(0x0C), Some(Ignore));
-        assert_eq!(kb.press_key(0x0B), Some(Ignore));
+        // Unlock layer c, with a different sequence
+        assert_eq!(kb.press_key(0xCC), Some(Ignore));
+        assert_eq!(kb.press_key(0xAB), Some(Ignore));
+        assert_eq!(kb.press_key(0xBC), Some(Ignore));
+        assert_eq!(kb.release_key(0xCC), Some(Ignore));
+        assert_eq!(kb.release_key(0xAB), Some(Ignore));
+        assert_eq!(kb.release_key(0xBC), Some(Ignore));
 
         assert_eq!(kb.press_key(0x01), Some(Character('A')));
         assert_eq!(kb.release_key(0x01), Some(Character('A')));
