@@ -62,8 +62,29 @@ impl VirtualKeyboard {
             }
         }
 
-        for lock_modifiers in layout.layer_locks() {
-            modifiers_scan_codes.insert(lock_modifiers.scan_code);
+        for lock_modifier in layout.layer_locks() {
+            modifiers_scan_codes.insert(lock_modifier.scan_code);
+
+            // Self lock is allowed, remove it from this list to prevent cycles in the graph.
+            // Other locks might create cycles, too, which will be detected durcing graph
+            // validation.
+            if lock_modifier.layer_from != lock_modifier.layer_to {
+                match edges.iter_mut().find(|(from, to, _)| {
+                    *from == lock_modifier.layer_from && *to == lock_modifier.layer_to
+                }) {
+                    Some(edge)
+                        if edge.0 == lock_modifier.layer_from
+                            && edge.1 == lock_modifier.layer_to =>
+                    {
+                        edge.2.push(lock_modifier.scan_code)
+                    }
+                    _ => edges.push((
+                        lock_modifier.layer_from,
+                        lock_modifier.layer_to,
+                        vec![lock_modifier.scan_code],
+                    )),
+                }
+            }
         }
 
         let layer_graph: LayerGraph = Graph::from_edges(edges);
@@ -611,7 +632,7 @@ mod tests {
         layout
             .add_modifier(0x2A, "base", "shift", Some(0xA0)) // forward shift vk
             .add_modifier(0xE036, "base", "shift", Some(0xA0)) // forward shift vk
-            .add_key(0xFF, "base",Character('x'))
+            .add_key(0xFF, "base", Character('x'))
             .add_layer_lock(0x2A, "shift", "shift", Some(0x14)) // caps lock vk
             .add_layer_lock(0xE036, "shift", "shift", Some(0x14)) // caps lock vk
             .add_key(0xFF, "shift", Character('X'));
@@ -625,12 +646,13 @@ mod tests {
         // activate caps lock
         assert_eq!(kb.press_key(0x2A), Some(VirtualKey(0xA0)));
         assert_eq!(kb.press_key(0xE036), Some(VirtualKey(0x14)));
-        assert_eq!(kb.release_key(0x2A), Some(VirtualKey(0xA0)));
+        assert_eq!(kb.press_key(0xFF), Some(Character('X')));
+        assert_eq!(kb.release_key(0xFF), Some(Character('X')));
 
         // temp base layer
+        assert_eq!(kb.release_key(0x2A), Some(VirtualKey(0xA0)));
         assert_eq!(kb.press_key(0xFF), Some(Character('x')));
         assert_eq!(kb.release_key(0xFF), Some(Character('x')));
-
         assert_eq!(kb.release_key(0xE036), Some(VirtualKey(0x14)));
 
         // locked shift layer
