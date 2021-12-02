@@ -1,22 +1,18 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 #![cfg_attr(test, windows_subsystem = "console")]
 
-mod config;
-mod keyboard_hook;
-mod layout;
-mod resources;
-mod tray_icon;
-mod virtual_keyboard;
-mod winapi_util;
-
 use std::path::Path;
 use std::{env, fs};
 
+mod resources;
+mod tray_icon;
+mod winapi_util;
+
 use anyhow::Result;
-use config::Config;
-use keyboard_hook::KeyboardHook;
+use kbremap::config::Config;
+use kbremap::keyboard_hook::KeyboardHook;
+use kbremap::virtual_keyboard::VirtualKeyboard;
 use tracing::Level;
-use virtual_keyboard::VirtualKeyboard;
 
 use crate::tray_icon::TrayIcon;
 
