@@ -1,5 +1,3 @@
-use crate::keyboard_hook::KeyAction;
-
 /// Byte 0 of [`Key::action`] contains the virtual key.
 const TAG_VIRTUAL_KEY: u8 = 0;
 
@@ -11,6 +9,20 @@ const TAG_MODIFIER: u8 = 2;
 
 /// Locks the current layer. Byte 3 of [`Key::action`] contains the target layer.
 const TAG_LAYER_LOCK: u8 = 3;
+
+/// Action associated with the key. Returned by the user provided hook callback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyAction {
+    /// Do not forward or send a key action.
+    Ignore,
+
+    /// Sends a (Unicode) character, if possible as virtual key press.
+    Character(char),
+
+    /// Sends a virtual key press.
+    /// Reference: <https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes>
+    VirtualKey(u8),
+}
 
 /// Compact representation of a key action.
 #[derive(Debug, Clone, Copy)]

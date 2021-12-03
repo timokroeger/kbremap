@@ -10,9 +10,11 @@ mod winapi_util;
 
 use anyhow::Result;
 use kbremap::config::Config;
-use kbremap::keyboard_hook::KeyboardHook;
+use kbremap::keyboard_hook::{self, KeyboardHook, KeyType, KeyEvent};
+use kbremap::layout::KeyAction;
 use kbremap::virtual_keyboard::VirtualKeyboard;
 use tracing::Level;
+use winapi::um::winuser::*; // Virtual key constants VK_*
 
 use crate::tray_icon::TrayIcon;
 
@@ -66,18 +68,62 @@ fn main() -> Result<()> {
 
     let mut kb = VirtualKeyboard::new(config.to_layout())?;
 
-    let kbhook = KeyboardHook::set(|key| {
+    let _kbhook = KeyboardHook::set(|mut key_event| {
         if !ui.is_enabled() {
-            return None;
+            return false;
         }
 
-        if key.up {
-            kb.release_key(key.scan_code)
-        } else {
-            kb.press_key(key.scan_code)
+        if config.disable_caps_lock && keyboard_hook::caps_lock_enabled() {
+            tracing::debug!("disabling caps lock");
+            keyboard_hook::send_key(KeyEvent {
+                up: false,
+                key: KeyType::VirtualKey(VK_CAPITAL as _),
+                ..key_event
+            });
+            keyboard_hook::send_key(KeyEvent {
+                up: true,
+                key: KeyType::VirtualKey(VK_CAPITAL as _),
+                ..key_event
+            });
         }
+
+        let remap = if key_event.up {
+            kb.release_key(key_event.scan_code)
+        } else {
+            kb.press_key(key_event.scan_code)
+        };
+
+        let mut log_line = key_event.to_string();
+
+        let handled = if let Some(remap) = remap {
+            match remap {
+                KeyAction::Ignore => {
+                    log_line.push_str(" ignored");
+                }
+                KeyAction::Character(c) => {
+                    if let Some(virtual_key) = keyboard_hook::get_virtual_key(c) {
+                        log_line = format!("{} remapped to `{}` as virtual key", log_line, c);
+                        key_event.key = KeyType::VirtualKey(virtual_key);
+                    } else {
+                        log_line = format!("{} remapped to `{}` as unicode input", log_line, c);
+                        key_event.key = KeyType::Unicode(c);
+                    }
+                    keyboard_hook::send_key(key_event);
+                }
+                KeyAction::VirtualKey(virtual_key) => {
+                    log_line = format!("{} remapped to virtual key {:#04X}", log_line, virtual_key);
+                    key_event.key = KeyType::VirtualKey(virtual_key);
+                    keyboard_hook::send_key(key_event);
+                }
+            }
+            true
+        } else {
+            false
+        };
+
+        tracing::debug!("{}", log_line);
+        handled
     });
-    kbhook.disable_caps_lock(config.disable_caps_lock);
 
     // The event loop is also required for the low-level keyboard hook to work.
     native_windows_gui::dispatch_thread_events();

@@ -6,8 +6,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::{algo, Directed, Graph};
 
-use crate::keyboard_hook::KeyAction;
-use crate::layout::Layout;
+use crate::layout::{KeyAction, Layout};
 
 /// A keyboard layout can be viewed as graph where layers are the nodes and
 /// modifiers (layer change keys) are the egdes.

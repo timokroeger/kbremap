@@ -4,8 +4,7 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use crate::keyboard_hook::KeyAction;
-use crate::layout::{Layout, LayoutBuilder};
+use crate::layout::{KeyAction, Layout, LayoutBuilder};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
