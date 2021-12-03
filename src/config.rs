@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use serde::Deserialize;
 
 use crate::keyboard_hook::KeyAction;
+use crate::layout::{Layout, LayoutBuilder};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -34,6 +35,10 @@ enum MappingTarget {
         layer: String,
         virtual_key: Option<u8>,
     },
+    LayerLock {
+        layer_lock: String,
+        virtual_key: Option<u8>,
+    },
 }
 
 impl Config {
@@ -42,54 +47,58 @@ impl Config {
         Ok(config)
     }
 
-    pub fn layer_names(&self) -> impl Iterator<Item = &str> {
-        self.layers.keys().map(String::as_str)
-    }
+    pub fn to_layout(&self) -> Layout {
+        let mut layout_builder = LayoutBuilder::new();
 
-    pub fn layer_mappings(&self, layer_name: &str) -> HashMap<u16, KeyAction> {
-        let mut mappings = HashMap::new();
-        for mapping in &self.layers[layer_name] {
-            let mut insert_mapping = |scan_code, action| {
-                if let Some(prev_action) = mappings.insert(scan_code, action) {
-                    println!(
-                        "Warning: `{:?}` overwritten by `{:?}` for scan_code={:#06X}",
-                        prev_action, action, mapping.scan_code
-                    );
-                }
-            };
-
-            match &mapping.target {
-                MappingTarget::Characters { characters } if !characters.is_empty() => {
-                    for (i, c) in characters.chars().enumerate() {
-                        insert_mapping(mapping.scan_code + i as u16, KeyAction::Character(c));
+        for (layer, mappings) in &self.layers {
+            for mapping in mappings {
+                match &mapping.target {
+                    MappingTarget::Characters { characters } if !characters.is_empty() => {
+                        for (i, c) in characters.chars().enumerate() {
+                            layout_builder.add_key(
+                                mapping.scan_code + i as u16,
+                                layer,
+                                KeyAction::Character(c),
+                            );
+                        }
                     }
-                }
-                MappingTarget::VirtualKeys { virtual_keys } if !virtual_keys.is_empty() => {
-                    for (i, vk) in virtual_keys.iter().enumerate() {
-                        insert_mapping(mapping.scan_code + i as u16, KeyAction::VirtualKey(*vk));
+                    MappingTarget::VirtualKeys { virtual_keys } if !virtual_keys.is_empty() => {
+                        for (i, vk) in virtual_keys.iter().enumerate() {
+                            layout_builder.add_key(
+                                mapping.scan_code + i as u16,
+                                layer,
+                                KeyAction::VirtualKey(*vk),
+                            );
+                        }
                     }
-                }
-                MappingTarget::Layer {
-                    virtual_key: Some(vk),
-                    ..
-                } => {
-                    insert_mapping(mapping.scan_code, KeyAction::VirtualKey(*vk));
-                }
-                _ => {
-                    insert_mapping(mapping.scan_code, KeyAction::Ignore);
+                    MappingTarget::Layer {
+                        layer: target_layer,
+                        virtual_key,
+                    } => {
+                        layout_builder.add_modifier(
+                            mapping.scan_code,
+                            layer,
+                            target_layer,
+                            *virtual_key,
+                        );
+                    }
+                    MappingTarget::LayerLock {
+                        layer_lock: target_layer,
+                        virtual_key,
+                    } => {
+                        layout_builder.add_layer_lock(
+                            mapping.scan_code,
+                            layer,
+                            target_layer,
+                            *virtual_key,
+                        );
+                    }
+                    _ => {
+                        layout_builder.add_key(mapping.scan_code, layer, KeyAction::Ignore);
+                    }
                 }
             }
         }
-        mappings
-    }
-
-    pub fn layer_modifiers(&self, layer_name: &str) -> impl Iterator<Item = (u16, &str)> {
-        self.layers[layer_name].iter().filter_map(|mapping| {
-            if let MappingTarget::Layer { layer, .. } = &mapping.target {
-                Some((mapping.scan_code, layer.as_str()))
-            } else {
-                None
-            }
-        })
+        layout_builder.build()
     }
 }

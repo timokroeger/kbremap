@@ -1,26 +1,19 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 #![cfg_attr(test, windows_subsystem = "console")]
 
-mod config;
-mod keyboard_hook;
-mod layout;
-mod resources;
-mod tray_icon;
-mod virtual_keyboard;
-mod winapi_util;
-
-use std::collections::HashMap;
 use std::path::Path;
 use std::{env, fs};
 
-use anyhow::Result;
-use config::Config;
-use keyboard_hook::KeyboardHook;
-use layout::LayoutBuilder;
-use tracing::Level;
-use virtual_keyboard::VirtualKeyboard;
+mod resources;
+mod tray_icon;
+mod winapi_util;
 
-use crate::keyboard_hook::KeyAction;
+use anyhow::Result;
+use kbremap::config::Config;
+use kbremap::keyboard_hook::KeyboardHook;
+use kbremap::virtual_keyboard::VirtualKeyboard;
+use tracing::Level;
+
 use crate::tray_icon::TrayIcon;
 
 /// Custom keyboard layouts for windows.
@@ -71,28 +64,7 @@ fn main() -> Result<()> {
 
     let config = load_config(args.config.as_deref().unwrap_or("config.toml"))?;
 
-    let layout = {
-        let mut layout_builder = LayoutBuilder::new();
-        for layer in config.layer_names() {
-            let modifiers: HashMap<u16, &str> = config.layer_modifiers(layer).collect();
-
-            for (scan_code, action) in config.layer_mappings(layer) {
-                if let Some(target_layer) = modifiers.get(&scan_code) {
-                    let vk = match action {
-                        KeyAction::Ignore => None,
-                        KeyAction::VirtualKey(vk) => Some(vk),
-                        _ => panic!("invalid modifer target"),
-                    };
-                    layout_builder.add_modifier(scan_code, layer, target_layer, vk);
-                } else {
-                    layout_builder.add_key(scan_code, layer, action);
-                }
-            }
-        }
-        layout_builder.build()
-    };
-
-    let mut kb = VirtualKeyboard::new(layout)?;
+    let mut kb = VirtualKeyboard::new(config.to_layout())?;
 
     let kbhook = KeyboardHook::set(|key| {
         if !ui.is_enabled() {

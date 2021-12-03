@@ -4,6 +4,7 @@
 
 ### Added
 - Layer locking #32
+- Make layer locking configurable
 
 ### Changed
 - Make layers transparent. When a key has no action defined, check the previous layer. #34
