@@ -38,7 +38,7 @@ impl Key {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct LayoutBuilder {
     keys: Vec<Key>,
     layer_names: Vec<String>,
@@ -46,10 +46,7 @@ pub struct LayoutBuilder {
 
 impl LayoutBuilder {
     pub fn new() -> Self {
-        Self {
-            keys: Vec::new(),
-            layer_names: Vec::new(),
-        }
+        Self::default()
     }
 
     fn add_or_get_layer(&mut self, layer: &str) -> u8 {
@@ -110,10 +107,7 @@ impl LayoutBuilder {
 
     pub fn build(mut self) -> Layout {
         self.keys.sort_by_key(|k| k.scan_code);
-        Layout {
-            keys: self.keys,
-            layer_names: self.layer_names,
-        }
+        Layout { keys: self.keys }
     }
 }
 
@@ -127,7 +121,6 @@ pub struct Modifier {
 #[derive(Debug)]
 pub struct Layout {
     keys: Vec<Key>,
-    layer_names: Vec<String>,
 }
 
 impl Layout {

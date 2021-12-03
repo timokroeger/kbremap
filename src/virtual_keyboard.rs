@@ -163,22 +163,20 @@ impl VirtualKeyboard {
         }
     }
 
-    pub fn lock_layer(&mut self, lock_layer: NodeIndex<u8>) {
+    pub fn lock_layer(&mut self, layer: u8) {
+        let layer = layer.into();
+
         self.active_layer_graph.clone_from(&self.base_layer_graph);
 
         // Update graph with the locked layer as new base layer.
-        reverse_edges(&mut self.active_layer_graph, self.base_layer, lock_layer);
+        reverse_edges(&mut self.active_layer_graph, self.base_layer, layer);
 
         // Jump back in history if this layer was locked before.
-        if let Some(idx) = self
-            .layer_history
-            .iter()
-            .position(|layer| *layer == lock_layer)
-        {
+        if let Some(idx) = self.layer_history.iter().position(|l| *l == layer) {
             self.layer_history.drain(idx + 1..);
         }
 
-        self.locked_layer = lock_layer;
+        self.locked_layer = layer;
         self.update_layer_history();
     }
 
@@ -243,7 +241,7 @@ impl VirtualKeyboard {
             // a repeated key event would unlock the layer again right away.
             let key = self.layout.get_key(scan_code);
             if let Some(lock_layer) = key.layer_lock(self.active_layer().index() as u8) {
-                self.lock_layer(NodeIndex::new(lock_layer.into()));
+                self.lock_layer(lock_layer);
             } else if self.locked_layer != self.base_layer {
                 // Try to unlock a previously locked layer
                 let active_layer_from_base =
@@ -251,7 +249,7 @@ impl VirtualKeyboard {
                 if key.layer_lock(active_layer_from_base.index() as u8)
                     == Some(self.locked_layer.index() as u8)
                 {
-                    self.lock_layer(self.base_layer);
+                    self.lock_layer(self.base_layer.index() as u8);
                 }
             }
         }
