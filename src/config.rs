@@ -4,13 +4,11 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use crate::keyboard_hook::KeyAction;
-use crate::layout::{Layout, LayoutBuilder};
+use crate::layout::{KeyAction, Layout, LayoutBuilder};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    #[serde(default)]
-    pub disable_caps_lock: bool,
+    pub caps_lock_layer: Option<String>,
 
     layers: HashMap<String, Vec<Mapping>>,
 }
@@ -51,6 +49,8 @@ impl Config {
         let mut layout_builder = LayoutBuilder::new();
 
         for (layer, mappings) in &self.layers {
+            layout_builder.add_or_get_layer(layer);
+
             for mapping in mappings {
                 match &mapping.target {
                     MappingTarget::Characters { characters } if !characters.is_empty() => {

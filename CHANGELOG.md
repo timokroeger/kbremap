@@ -7,7 +7,9 @@
 - Make layer locking configurable
 
 ### Changed
-- Make layers transparent. When a key has no action defined, check the previous layer. #34
+- Make layers transparent. When a key has no action defined, check the previous layer (#34).
+- Caps lock can be assigned to a layer (#44) with the `caps_lock_layer` config.
+  Replaces the `disable_caps_lock` config entry.
 
 ### Fixed
 - The base layer can now have any name

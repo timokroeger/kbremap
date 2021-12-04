@@ -1,4 +1,4 @@
-use kbremap::keyboard_hook::KeyAction::*;
+use kbremap::layout::KeyAction::*;
 use kbremap::layout::LayoutBuilder;
 use kbremap::virtual_keyboard::VirtualKeyboard;
 
