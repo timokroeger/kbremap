@@ -61,7 +61,7 @@ impl LayoutBuilder {
         Self::default()
     }
 
-    fn add_or_get_layer(&mut self, layer: &str) -> u8 {
+    pub fn add_or_get_layer(&mut self, layer: &str) -> u8 {
         let layer_idx = self
             .layer_names
             .iter()
@@ -119,7 +119,10 @@ impl LayoutBuilder {
 
     pub fn build(mut self) -> Layout {
         self.keys.sort_by_key(|k| k.scan_code);
-        Layout { keys: self.keys }
+        Layout {
+            keys: self.keys,
+            layer_names: self.layer_names,
+        }
     }
 }
 
@@ -133,6 +136,7 @@ pub struct Modifier {
 #[derive(Debug)]
 pub struct Layout {
     keys: Vec<Key>,
+    layer_names: Vec<String>,
 }
 
 impl Layout {
@@ -145,6 +149,10 @@ impl Layout {
                 .unwrap_or_else(|idx| idx),
             scan_code,
         }
+    }
+
+    pub fn layer_names(&self) -> &Vec<String> {
+        &self.layer_names
     }
 
     pub fn modifiers(&self) -> impl Iterator<Item = Modifier> + '_ {

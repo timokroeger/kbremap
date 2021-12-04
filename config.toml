@@ -1,10 +1,17 @@
 # Example Dvorak layout configuration with comments.
 
-# Set to `true` to disable caps lock.
-# Useful when the caps lock is remapped but the caps lock state is toggled externally
-# for example by RDP or other programs running with admin rights.
-# The Dvorak layout does not overwrite the caps lock key. Keep the default caps lock behavoir.
-disable_caps_lock = false
+# Associates the caps lock key and indicator light with a layer.
+# Especially useful when the caps lock key is remapped and you accidentally use it
+# from a program running with admin rights (where kbremap does not work).
+# Windows remote desktop RDP also always captures your input with admin rights and
+# changes your caps lock state even when running kbremap on your remote machine.
+caps_lock_layer = "shift"
+
+# Uncomment to disable the caps lock indicator entirely (even when enabled externally).
+# Only disables the `VK_CAPITAL` virtual key. Layers can still be locked when configured below.
+# To disable locking, uncomment the `layer_lock` action on the base layer.
+# The "unreachable" layer is defined at the end of the file.
+#caps_lock_layer = "unreachable"
 
 [layers]
 # A layer is a collection of mappings where each mapping consists of a *source* (`scan_code`) and a
@@ -25,13 +32,14 @@ base = [
     # Injects a Unicode symbol if the character is not available on the Windows layout.
     { scan_code = 0x02, characters = "1234567890[]" },
     { scan_code = 0x10, characters = "',.pyfgcrl/=\\" },
-    { scan_code = 0x1E, characters = "aoeaidhtns-" },
+    { scan_code = 0x1E, characters = "aoeuidhtns-" },
     { scan_code = 0x2C, characters = ";qjkxbmwvz" },
 
     # The `layer` target switches to another virtual layer.
     # Ignores the original scan code if no `virtual_key` is specified.
     { scan_code = 0x2A,   layer = "shift", virtual_key = 0xA0 }, # left shift
     { scan_code = 0xE036, layer = "shift", virtual_key = 0xA1 }, # right shift
+    { scan_code = 0x3A,   layer_lock = "shift" }, # caps lock
 
     # The `virtual_keys` works similar to the `characters` target but takes a collection of virtual keys.
     # An empty target can be used to ignore scan codes.
@@ -39,22 +47,14 @@ base = [
 
     # Emoji Keys!
     # { scan_code = 0x29, characters = "🚀" }, # `~` on US layout, `^` on german layout
-
-    # Uncomment following lines to use the system ("querty" / "querz") layout for shortcuts
-    # { scan_code = 0x1D,   layer = "disabled" }, # left ctrl
-    # { scan_code = 0xE05B, layer = "disabled" }, # left windows key
-    # { scan_code = 0x38,   layer = "disabled" }, # left alt
-    # { scan_code = 0xE038, layer = "disabled" }, # right alt
-    # { scan_code = 0xE05C, layer = "disabled" }, # right windows key
-    # { scan_code = 0xE01D, layer = "disabled" }, # right ctrl
 ]
 
 shift = [
     { scan_code = 0x02, characters =  "!@#$%^&*(){}" },
     { scan_code = 0x10, characters = "\"<>PYFGCRL?+|" },
-    { scan_code = 0x1E, characters =  "AOEAIDHTNS_" },
+    { scan_code = 0x1E, characters =  "AOEWIDHTNS_" },
     { scan_code = 0x2C, characters =  ":QJKXBMWVZ" },
 ]
 
-# A layer without any mapping: Forward all key presses without change.
-# disable = []
+# A dummy layer not referenced by any layer key action.
+unreachable = []

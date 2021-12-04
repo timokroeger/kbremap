@@ -10,7 +10,7 @@ mod winapi_util;
 
 use anyhow::Result;
 use kbremap::config::Config;
-use kbremap::keyboard_hook::{self, KeyboardHook, KeyType, KeyEvent};
+use kbremap::keyboard_hook::{self, KeyEvent, KeyType, KeyboardHook};
 use kbremap::layout::KeyAction;
 use kbremap::virtual_keyboard::VirtualKeyboard;
 use tracing::Level;
@@ -65,26 +65,20 @@ fn main() -> Result<()> {
     let args: CommandLineArguments = argh::from_env();
 
     let config = load_config(args.config.as_deref().unwrap_or("config.toml"))?;
+    let layout = config.to_layout();
+    let caps_lock_layer_idx = config.caps_lock_layer.map(|l| {
+        layout
+            .layer_names()
+            .iter()
+            .position(|name| l == *name)
+            .expect("caps lock layer not found") as u8
+    });
 
-    let mut kb = VirtualKeyboard::new(config.to_layout())?;
+    let mut kb = VirtualKeyboard::new(layout)?;
 
     let _kbhook = KeyboardHook::set(|mut key_event| {
         if !ui.is_enabled() {
             return false;
-        }
-
-        if config.disable_caps_lock && keyboard_hook::caps_lock_enabled() {
-            tracing::debug!("disabling caps lock");
-            keyboard_hook::send_key(KeyEvent {
-                up: false,
-                key: KeyType::VirtualKey(VK_CAPITAL as _),
-                ..key_event
-            });
-            keyboard_hook::send_key(KeyEvent {
-                up: true,
-                key: KeyType::VirtualKey(VK_CAPITAL as _),
-                ..key_event
-            });
         }
 
         let remap = if key_event.up {
@@ -92,6 +86,23 @@ fn main() -> Result<()> {
         } else {
             kb.press_key(key_event.scan_code)
         };
+
+        // Special caps lock handling
+        if let Some(caps_lock_layer) = caps_lock_layer_idx {
+            if (kb.locked_layer() == caps_lock_layer) != keyboard_hook::caps_lock_enabled() {
+                tracing::debug!("toggle caps lock");
+                keyboard_hook::send_key(KeyEvent {
+                    up: false,
+                    key: KeyType::VirtualKey(VK_CAPITAL as _),
+                    ..key_event
+                });
+                keyboard_hook::send_key(KeyEvent {
+                    up: true,
+                    key: KeyType::VirtualKey(VK_CAPITAL as _),
+                    ..key_event
+                });
+            }
+        }
 
         let mut log_line = key_event.to_string();
 
