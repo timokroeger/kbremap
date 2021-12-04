@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2021-12-04
+
 ### Added
 - Layer locking #32
 - Make layer locking configurable
