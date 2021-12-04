@@ -89,7 +89,7 @@ fn main() -> anyhow::Result<()> {
     native_windows_gui::init()?;
     let ui = TrayIcon::new(console_available)?;
 
-    let mut kb = VirtualKeyboard::new(layout)?;
+    let mut kb = VirtualKeyboard::new(layout);
     let _kbhook = KeyboardHook::set(|mut key_event| {
         if !ui.is_enabled() {
             return false;

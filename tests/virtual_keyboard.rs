@@ -3,7 +3,7 @@ use kbremap::layout::LayoutBuilder;
 use kbremap::virtual_keyboard::VirtualKeyboard;
 
 #[test]
-fn layer_activation() -> anyhow::Result<()> {
+fn layer_activation() {
     let mut layout = LayoutBuilder::new();
     layout
         .add_modifier(0x11, "base", "l1", None)
@@ -14,7 +14,7 @@ fn layer_activation() -> anyhow::Result<()> {
         .add_key(0x20, "l2", Character('2'))
         .add_key(0x20, "l3", Character('3'));
     let layout = layout.build();
-    let mut kb = VirtualKeyboard::new(layout)?;
+    let mut kb = VirtualKeyboard::new(layout);
 
     // L0
     assert_eq!(kb.press_key(0x20), Some(Character('0')));
@@ -71,28 +71,25 @@ fn layer_activation() -> anyhow::Result<()> {
     assert_eq!(kb.release_key(0x20), Some(Character('1')));
     assert_eq!(kb.press_key(0x20), Some(Character('0')));
     assert_eq!(kb.release_key(0x20), Some(Character('0')));
-
-    Ok(())
 }
 
 #[test]
-fn accidental_shift_lock_issue25() -> anyhow::Result<()> {
+fn accidental_shift_lock_issue25() {
     let mut layout = LayoutBuilder::new();
     layout
         .add_modifier(0x2A, "base", "shift", Some(0xA0))
         .add_modifier(0xE036, "base", "shift", Some(0xA1));
     let layout = layout.build();
-    let mut kb = VirtualKeyboard::new(layout)?;
+    let mut kb = VirtualKeyboard::new(layout);
 
     assert_eq!(kb.press_key(0xE036), Some(VirtualKey(0xA1)));
     assert_eq!(kb.press_key(0x002A), Some(VirtualKey(0xA0)));
     assert_eq!(kb.release_key(0x002A), Some(VirtualKey(0xA0)));
     assert_eq!(kb.release_key(0xE036), Some(VirtualKey(0xA1)));
-
-    Ok(())
 }
 
 #[test]
+#[should_panic]
 fn cyclic_layers() {
     let mut layout = LayoutBuilder::new();
     layout
@@ -100,11 +97,11 @@ fn cyclic_layers() {
         .add_modifier(0x0002, "overlay", "base", None);
     let layout = layout.build();
 
-    assert!(VirtualKeyboard::new(layout).is_err());
+    VirtualKeyboard::new(layout);
 }
 
 #[test]
-fn masked_modifier_on_base_layer() -> anyhow::Result<()> {
+fn masked_modifier_on_base_layer() {
     let mut layout = LayoutBuilder::new();
     layout
         .add_modifier(0x0A, "base", "a", None)
@@ -113,7 +110,7 @@ fn masked_modifier_on_base_layer() -> anyhow::Result<()> {
         .add_key(0xBB, "b", Character('B'))
         .add_key(0xCC, "c", Character('C')); // not reachable from base
     let layout = layout.build();
-    let mut kb = VirtualKeyboard::new(layout)?;
+    let mut kb = VirtualKeyboard::new(layout);
 
     // "B" does not exist on base layer
     assert_eq!(kb.press_key(0xBB), None);
@@ -140,12 +137,10 @@ fn masked_modifier_on_base_layer() -> anyhow::Result<()> {
     // "B" does not exist on base layer
     assert_eq!(kb.press_key(0xBB), None);
     assert_eq!(kb.release_key(0xBB), None);
-
-    Ok(())
 }
 
 #[test]
-fn layer_lock() -> anyhow::Result<()> {
+fn layer_lock() {
     let mut layout = LayoutBuilder::new();
     layout
         .add_modifier(0x0A, "base", "a", None)
@@ -169,7 +164,7 @@ fn layer_lock() -> anyhow::Result<()> {
         .add_layer_lock(0xB0, "c", "c", None)
         .add_key(0xFF, "c", Character('C'));
     let layout = layout.build();
-    let mut kb = VirtualKeyboard::new(layout)?;
+    let mut kb = VirtualKeyboard::new(layout);
 
     // Lock layer a
     assert_eq!(kb.press_key(0x0A), Some(Ignore));
@@ -216,12 +211,10 @@ fn layer_lock() -> anyhow::Result<()> {
     // Check if locked to layer base
     assert_eq!(kb.press_key(0xFF), Some(Character('X')));
     assert_eq!(kb.release_key(0xFF), Some(Character('X')));
-
-    Ok(())
 }
 
 #[test]
-fn transparency() -> anyhow::Result<()> {
+fn transparency() {
     let mut layout = LayoutBuilder::new();
     layout
         .add_modifier(0xAB, "a", "b", None)
@@ -235,7 +228,7 @@ fn transparency() -> anyhow::Result<()> {
         .add_key(0x01, "c", Character('C'))
         .add_key(0x04, "c", Character('C'));
     let layout = layout.build();
-    let mut kb = VirtualKeyboard::new(layout)?;
+    let mut kb = VirtualKeyboard::new(layout);
 
     // Layer a
     assert_eq!(kb.press_key(0x01), Some(Character('A')));
@@ -304,12 +297,10 @@ fn transparency() -> anyhow::Result<()> {
     assert_eq!(kb.release_key(0x03), Some(Character('A')));
     assert_eq!(kb.press_key(0x04), None);
     assert_eq!(kb.release_key(0x04), None);
-
-    Ok(())
 }
 
 #[test]
-fn layer_lock_shared_path() -> anyhow::Result<()> {
+fn layer_lock_shared_path() {
     let mut layout = LayoutBuilder::new();
     layout
         .add_modifier(0x0A, "base", "a", None)
@@ -326,7 +317,7 @@ fn layer_lock_shared_path() -> anyhow::Result<()> {
         .add_layer_lock(0xCD, "d", "d", None)
         .add_key(0xFF, "d", Character('X'));
     let layout = layout.build();
-    let mut kb = VirtualKeyboard::new(layout)?;
+    let mut kb = VirtualKeyboard::new(layout);
 
     // Just make sure it does not panic.
     kb.press_key(0x0A);
@@ -345,12 +336,10 @@ fn layer_lock_shared_path() -> anyhow::Result<()> {
     // Check if locked
     assert_eq!(kb.press_key(0xFF), Some(Character('X')));
     assert_eq!(kb.release_key(0xFF), Some(Character('X')));
-
-    Ok(())
 }
 
 #[test]
-fn layer_lock_caps() -> anyhow::Result<()> {
+fn layer_lock_caps() {
     let mut layout = LayoutBuilder::new();
     layout
         .add_modifier(0x2A, "base", "shift", Some(0xA0)) // forward shift vk
@@ -360,7 +349,7 @@ fn layer_lock_caps() -> anyhow::Result<()> {
         .add_layer_lock(0xE036, "shift", "shift", Some(0x14)) // caps lock vk
         .add_key(0xFF, "shift", Character('X'));
     let layout = layout.build();
-    let mut kb = VirtualKeyboard::new(layout)?;
+    let mut kb = VirtualKeyboard::new(layout);
 
     // base layer
     assert_eq!(kb.press_key(0xFF), Some(Character('x')));
@@ -391,6 +380,4 @@ fn layer_lock_caps() -> anyhow::Result<()> {
     // base layer
     assert_eq!(kb.press_key(0xFF), Some(Character('x')));
     assert_eq!(kb.release_key(0xFF), Some(Character('x')));
-
-    Ok(())
 }

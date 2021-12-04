@@ -1,6 +1,5 @@
 //! Remapping and layer switching logic.
 
-use anyhow::{anyhow, Result};
 use map_vec::{Map, Set};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -50,7 +49,7 @@ pub struct VirtualKeyboard {
 
 impl VirtualKeyboard {
     /// Create a new virtual keyboard with `layout`.
-    pub fn new(layout: Layout) -> Result<Self> {
+    pub fn new(layout: Layout) -> Self {
         // Add modifiers as edges to the graph.
         // Include also lock modifiers so that they change to the target layer on key press
         // (even before the locking locking runs on key release).
@@ -92,10 +91,9 @@ impl VirtualKeyboard {
         let layer_graph: LayerGraph = Graph::from_edges(edges);
 
         // Check for cycles and find the base layer.
-        let base_layer =
-            algo::toposort(&layer_graph, None).map_err(|_| anyhow!("Cycle in layer graph"))?[0];
+        let base_layer = algo::toposort(&layer_graph, None).expect("Cycle in layer graph")[0];
 
-        Ok(Self {
+        Self {
             layout,
             modifiers_scan_codes,
             base_layer_graph: layer_graph.clone(),
@@ -105,7 +103,7 @@ impl VirtualKeyboard {
             layer_history: vec![base_layer],
             pressed_modifiers: Vec::new(),
             pressed_keys: Map::new(),
-        })
+        }
     }
 
     pub fn active_layer(&self) -> u8 {
