@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::os::windows::prelude::{OsStrExt, OsStringExt};
 use std::{env, mem, ptr};
 
-use wchar::wchz;
+use widestring::u16cstr;
 use winapi::shared::minwindef::*;
 use winapi::um::winnt::*;
 use winapi::um::winreg::*;
@@ -26,7 +26,7 @@ impl<'a> AutoStartEntry<'a> {
             let mut key: HKEY = mem::zeroed();
             RegCreateKeyW(
                 HKEY_CURRENT_USER,
-                wchz!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run") as _,
+                u16cstr!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run").as_ptr(),
                 &mut key,
             );
             Self { key, name }

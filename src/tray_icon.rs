@@ -5,7 +5,7 @@ use native_windows_gui::{
     EmbedResource, Event, EventHandler, GlobalCursor, Icon, Menu, MenuItem, MessageWindow,
     NwgError, RawEventHandler, TrayNotification,
 };
-use wchar::*;
+use widestring::u16cstr;
 use winapi::um::consoleapi::*;
 use winapi::um::wincon::*;
 use winapi::um::winuser::*;
@@ -22,7 +22,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             disabled: Default::default(),
-            autostart: AutoStartEntry::new(wchz!("kbremap")),
+            autostart: AutoStartEntry::new(u16cstr!("kbremap").as_slice()),
         }
     }
 }
