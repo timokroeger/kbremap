@@ -1,18 +1,21 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 #![cfg_attr(test, windows_subsystem = "console")]
 
-use std::path::Path;
-use std::{env, fs};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
+use std::{env, fs, io};
 
 mod resources;
 mod tray_icon;
 mod winapi_util;
 
-use anyhow::Result;
+use anyhow::anyhow;
 use kbremap::config::Config;
 use kbremap::keyboard_hook::{self, KeyEvent, KeyType, KeyboardHook};
 use kbremap::layout::KeyAction;
 use kbremap::virtual_keyboard::VirtualKeyboard;
+use single_instance::SingleInstance;
 use tracing::Level;
 use winapi::um::winuser::*; // Virtual key constants VK_*
 
@@ -26,7 +29,7 @@ struct CommandLineArguments {
     config: Option<String>,
 }
 
-fn load_config(config_file: &str) -> Result<Config> {
+fn config_path(config_file: &str) -> io::Result<PathBuf> {
     let mut path_buf;
     let mut config_file = Path::new(config_file);
 
@@ -39,11 +42,10 @@ fn load_config(config_file: &str) -> Result<Config> {
         config_file = path_buf.as_path();
     }
 
-    let config_str = fs::read_to_string(config_file)?;
-    Ok(Config::from_toml(&config_str)?)
+    fs::canonicalize(config_file)
 }
 
-fn main() -> Result<()> {
+fn main() -> anyhow::Result<()> {
     // Display debug and panic output when launched from a terminal.
     let console_available = unsafe {
         use winapi::um::wincon::*;
@@ -59,12 +61,22 @@ fn main() -> Result<()> {
         .with_target(false)
         .init();
 
-    native_windows_gui::init()?;
-    let ui = TrayIcon::new(console_available)?;
-
     let args: CommandLineArguments = argh::from_env();
+    let config_file = config_path(args.config.as_deref().unwrap_or("config.toml"))?;
 
-    let config = load_config(args.config.as_deref().unwrap_or("config.toml"))?;
+    // Prevent duplicate instances if windows re-runs autostarts when rebooting after OS updates.
+    let mut hasher = DefaultHasher::new();
+    env::current_exe().unwrap().hash(&mut hasher);
+    config_file.hash(&mut hasher);
+    let instance_key = format!("kbremap-{:016x}", hasher.finish());
+    let instance = SingleInstance::new(&instance_key)?;
+    if !instance.is_single() {
+        return Err(anyhow!("already running with the same configuration"));
+    }
+
+    let config_str = fs::read_to_string(config_file)?;
+    let config = Config::from_toml(&config_str)?;
+
     let layout = config.to_layout();
     let caps_lock_layer_idx = config.caps_lock_layer.map(|l| {
         layout
@@ -74,8 +86,10 @@ fn main() -> Result<()> {
             .expect("caps lock layer not found") as u8
     });
 
-    let mut kb = VirtualKeyboard::new(layout)?;
+    native_windows_gui::init()?;
+    let ui = TrayIcon::new(console_available)?;
 
+    let mut kb = VirtualKeyboard::new(layout)?;
     let _kbhook = KeyboardHook::set(|mut key_event| {
         if !ui.is_enabled() {
             return false;
