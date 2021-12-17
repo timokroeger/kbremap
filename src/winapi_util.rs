@@ -1,18 +1,17 @@
-use std::ffi::OsString;
-use std::os::windows::prelude::{OsStrExt, OsStringExt};
-use std::{env, mem, ptr};
+use std::{mem, ptr};
 
-use widestring::u16cstr;
+use widestring::{u16cstr, U16CStr, U16CString};
 use winapi::shared::minwindef::*;
 use winapi::um::winnt::*;
 use winapi::um::winreg::*;
 
-pub struct AutoStartEntry<'a> {
+pub struct AutoStartEntry {
     key: HKEY,
-    name: &'a [u16],
+    name: U16CString,
+    cmd: U16CString,
 }
 
-impl<'a> Drop for AutoStartEntry<'a> {
+impl Drop for AutoStartEntry {
     fn drop(&mut self) {
         unsafe {
             RegCloseKey(self.key);
@@ -20,8 +19,8 @@ impl<'a> Drop for AutoStartEntry<'a> {
     }
 }
 
-impl<'a> AutoStartEntry<'a> {
-    pub fn new(name: &'a [u16]) -> Self {
+impl AutoStartEntry {
+    pub fn new(name: U16CString, cmd: U16CString) -> Self {
         unsafe {
             let mut key: HKEY = mem::zeroed();
             RegCreateKeyW(
@@ -29,12 +28,11 @@ impl<'a> AutoStartEntry<'a> {
                 u16cstr!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run").as_ptr(),
                 &mut key,
             );
-            Self { key, name }
+            Self { key, name, cmd }
         }
     }
 
     pub fn is_registered(&self) -> bool {
-        let exe_path = env::current_exe().unwrap();
         unsafe {
             let mut path_buf = [0_u16; MAX_PATH];
             let mut path_len = mem::size_of_val(&path_buf) as u32;
@@ -48,28 +46,27 @@ impl<'a> AutoStartEntry<'a> {
                 &mut path_len as _,
             ) == 0;
 
-            key_exists
-                && OsString::from_wide(&path_buf[..(path_len as usize / 2 - 1)])
-                    == exe_path.as_os_str()
+            if !key_exists {
+                return false;
+            }
+
+            if let Ok(value) = U16CStr::from_slice(&path_buf[..(path_len / 2) as usize]) {
+                return value == self.cmd;
+            }
+
+            return false;
         }
     }
 
     pub fn register(&self) {
-        let mut exe_path: Vec<u16> = env::current_exe()
-            .unwrap()
-            .as_os_str()
-            .encode_wide()
-            .collect();
-        exe_path.push(0);
-
         unsafe {
             RegSetValueExW(
                 self.key,
                 self.name.as_ptr(),
                 0,
                 REG_SZ,
-                exe_path.as_mut_ptr() as _,
-                (exe_path.len() * 2) as _,
+                self.cmd.as_ptr() as _,
+                ((self.cmd.len() + 1) * 2) as _,
             )
         };
     }

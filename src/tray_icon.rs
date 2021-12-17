@@ -1,11 +1,12 @@
 use std::cell::RefCell;
+use std::env;
 use std::rc::Rc;
 
 use native_windows_gui::{
     EmbedResource, Event, EventHandler, GlobalCursor, Icon, Menu, MenuItem, MessageWindow,
     NwgError, RawEventHandler, TrayNotification,
 };
-use widestring::u16cstr;
+use widestring::{u16cstr, U16CString};
 use winapi::um::consoleapi::*;
 use winapi::um::wincon::*;
 use winapi::um::winuser::*;
@@ -15,14 +16,18 @@ use crate::winapi_util::AutoStartEntry;
 
 struct State {
     disabled: bool,
-    autostart: AutoStartEntry<'static>,
+    autostart: AutoStartEntry,
 }
 
 impl Default for State {
     fn default() -> Self {
+        let cmd = env::current_exe().unwrap();
         Self {
             disabled: Default::default(),
-            autostart: AutoStartEntry::new(u16cstr!("kbremap").as_slice()),
+            autostart: AutoStartEntry::new(
+                u16cstr!("kbremap").into(),
+                U16CString::from_os_str(cmd).unwrap(),
+            ),
         }
     }
 }
@@ -150,7 +155,6 @@ impl TrayIcon {
             .text("Run at system start")
             .parent(&data.tray_menu)
             .build(&mut data.tray_menu_autostart)?;
-        data.update_autostart();
 
         MenuItem::builder()
             .text("Show debug output")
@@ -194,7 +198,7 @@ impl TrayIcon {
             native_windows_gui::full_bind_event_handler(&data.window.handle, event_handler);
 
         // Use an additional low level handler, because high level handler does
-        // not support double click events for the tary icon.
+        // not support double click events for the tray icon.
         let data_raw_handler = Rc::downgrade(&data);
         let raw_event_handler = move |_, msg, _, lparam| {
             let data = data_raw_handler.upgrade().unwrap();
@@ -208,7 +212,10 @@ impl TrayIcon {
             use winapi::um::winuser::*;
             match lparam as _ {
                 WM_LBUTTONDBLCLK => data.toggle_disable(),
-                WM_RBUTTONUP => data.show_menu(),
+                WM_RBUTTONUP => {
+                    data.update_autostart();
+                    data.show_menu();
+                }
                 _ => (),
             }
 
