@@ -66,7 +66,7 @@ fn main() -> anyhow::Result<()> {
 
     // Prevent duplicate instances if windows re-runs autostarts when rebooting after OS updates.
     let mut hasher = DefaultHasher::new();
-    env::current_exe().unwrap().hash(&mut hasher);
+    env::current_exe()?.hash(&mut hasher);
     config_file.hash(&mut hasher);
     let instance_key = format!("kbremap-{:016x}", hasher.finish());
     let instance = SingleInstance::new(&instance_key)?;
@@ -78,9 +78,10 @@ fn main() -> anyhow::Result<()> {
     let config = Config::from_toml(&config_str)?;
 
     let layout = config.to_layout();
+    let layer_names = layout.layer_names().clone();
+
     let caps_lock_layer_idx = config.caps_lock_layer.map(|l| {
-        layout
-            .layer_names()
+        layer_names
             .iter()
             .position(|name| l == *name)
             .expect("caps lock layer not found") as u8
@@ -90,6 +91,7 @@ fn main() -> anyhow::Result<()> {
     let ui = TrayIcon::new(console_available)?;
 
     let mut kb = VirtualKeyboard::new(layout);
+    let mut locked_layer = kb.locked_layer();
     let _kbhook = KeyboardHook::set(|mut key_event| {
         if !ui.is_enabled() {
             return false;
@@ -116,6 +118,14 @@ fn main() -> anyhow::Result<()> {
                     ..key_event
                 });
             }
+        }
+
+        if kb.locked_layer() != locked_layer {
+            locked_layer = kb.locked_layer();
+            ui.show_message(&format!(
+                "Layer \"{}\" locked",
+                layer_names[locked_layer as usize]
+            ));
         }
 
         let mut log_line = key_event.to_string();

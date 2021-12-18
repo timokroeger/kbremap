@@ -239,4 +239,8 @@ impl TrayIcon {
     pub fn is_enabled(&self) -> bool {
         !self.data.state.borrow().disabled
     }
+
+    pub fn show_message(&self, message: &str) {
+        self.data.tray.show(message, None, None, None);
+    }
 }

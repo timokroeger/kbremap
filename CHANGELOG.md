@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+- Show a notification when a layer was locked
+
+### Changed
+- Do not allow running duplicate instances of the same binary file.
+
 ## [1.3.0] - 2021-12-04
 
 ### Added
