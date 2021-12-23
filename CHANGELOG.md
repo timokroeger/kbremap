@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.4.0] - 2021-12-23
 
 ### Added
 - Show a notification when a layer was locked
