@@ -54,7 +54,7 @@ impl AutoStartEntry {
                 return value == self.cmd;
             }
 
-            return false;
+            false
         }
     }
 
