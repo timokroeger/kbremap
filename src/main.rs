@@ -16,7 +16,6 @@ use kbremap::keyboard_hook::{self, KeyEvent, KeyType, KeyboardHook};
 use kbremap::layout::KeyAction;
 use kbremap::virtual_keyboard::VirtualKeyboard;
 use single_instance::SingleInstance;
-use tracing::Level;
 use winapi::um::winuser::*; // Virtual key constants VK_*
 
 use crate::tray_icon::TrayIcon;
@@ -51,15 +50,6 @@ fn main() -> anyhow::Result<()> {
         use winapi::um::wincon::*;
         AttachConsole(ATTACH_PARENT_PROCESS) != 0
     };
-
-    let (stdout_nb, _guard) = tracing_appender::non_blocking(std::io::stdout());
-    tracing_subscriber::fmt()
-        .with_writer(stdout_nb)
-        .with_max_level(Level::DEBUG)
-        .without_time()
-        .with_level(false)
-        .with_target(false)
-        .init();
 
     let args: CommandLineArguments = argh::from_env();
     let config_file = config_path(args.config.as_deref().unwrap_or("config.toml"))?;
@@ -106,7 +96,7 @@ fn main() -> anyhow::Result<()> {
         // Special caps lock handling
         if let Some(caps_lock_layer) = caps_lock_layer_idx {
             if (kb.locked_layer() == caps_lock_layer) != keyboard_hook::caps_lock_enabled() {
-                tracing::debug!("toggle caps lock");
+                println!("toggle caps lock");
                 keyboard_hook::send_key(KeyEvent {
                     up: false,
                     key: KeyType::VirtualKey(VK_CAPITAL as _),
@@ -156,7 +146,7 @@ fn main() -> anyhow::Result<()> {
             false
         };
 
-        tracing::debug!("{}", log_line);
+        println!("{}", log_line);
         handled
     });
 
