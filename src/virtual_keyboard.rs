@@ -64,7 +64,7 @@ impl VirtualKeyboard {
 
         let mut modifiers_scan_codes = Set::new();
         let mut edges: Vec<(u8, u8, Vec<u16>)> = Vec::new();
-        for modifier in layout.modifiers().chain(layout.layer_locks()) {
+        for modifier in modifiers {
             modifiers_scan_codes.insert(modifier.scan_code);
 
             // A lock modifier key can lock the layer it is defined on by targeting the own layer.
