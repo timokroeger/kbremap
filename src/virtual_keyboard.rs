@@ -26,7 +26,7 @@ pub struct VirtualKeyboard {
     base_layer_graph: LayerGraph,
     base_layer: NodeIndex<u8>,
 
-    /// Active layer graph to figure out which layer as active.
+    /// Active layer graph to figure out which layer is active.
     active_layer_graph: LayerGraph,
 
     /// Layer used when no modifier keys are pressed.
@@ -43,7 +43,7 @@ pub struct VirtualKeyboard {
     pressed_modifiers: Vec<u16>,
 
     /// Keeps track of all pressed keys so that we always can send the matching
-    /// action when on key release, even when the layer has changed.
+    /// action after key release, even when the layer has changed.
     pressed_keys: Map<u16, Option<KeyAction>>,
 }
 
