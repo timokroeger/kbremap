@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.4.1] - 2022-04-11
+- Removing `tracing` dependency
+- Fix bug where the layer graph was wrong for some modifier configurations
+
 ## [1.4.0] - 2021-12-23
 
 ### Added
