@@ -1,6 +1,6 @@
 //! Safe abstraction over the low-level windows keyboard hook API.
 
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::fmt::Display;
 use std::{mem, ptr};
 
@@ -14,12 +14,7 @@ type HookFn = dyn FnMut(KeyEvent) -> bool;
 
 thread_local! {
     /// Stores the hook callback for the current thread.
-    static HOOK_STATE: RefCell<HookState> = RefCell::default();
-}
-
-#[derive(Default)]
-struct HookState {
-    hook: Option<Box<HookFn>>,
+    static HOOK: Cell<Option<Box<HookFn>>> = Cell::default();
 }
 
 /// Wrapper for the low-level keyboard hook API.
@@ -44,14 +39,13 @@ impl KeyboardHook {
     /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediatelly be unregistered and not work."]
     pub fn set(callback: impl FnMut(KeyEvent) -> bool + 'static) -> KeyboardHook {
-        HOOK_STATE.with(|state| {
-            let mut state = state.borrow_mut();
+        HOOK.with(|state| {
             assert!(
-                state.hook.is_none(),
+                state.take().is_none(),
                 "Only one keyboard hook can be registered per thread."
             );
 
-            state.hook = Some(Box::new(callback));
+            state.set(Some(Box::new(callback)));
 
             KeyboardHook {
                 handle: unsafe {
@@ -67,7 +61,7 @@ impl KeyboardHook {
 impl Drop for KeyboardHook {
     fn drop(&mut self) {
         unsafe { UnhookWindowsHookEx(self.handle) };
-        HOOK_STATE.with(|state| state.take());
+        HOOK.with(|state| state.take());
     }
 }
 
@@ -151,14 +145,17 @@ unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM)
         return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
     }
 
-    let handled = HOOK_STATE.with(|state| {
-        // The mutable reference can be taken as long as we properly prevent recursion
-        // by dropping injected events.
-        let mut state = state.borrow_mut();
-
-        // The unwrap cannot fail, because windows only calls this function after
-        // registering the hook (before which we have set [`HOOK_STATE`]).
-        state.hook.as_mut().unwrap()(key_event)
+    let mut handled = false;
+    HOOK.with(|state| {
+        // The unwrap cannot fail, because we have initialized [`HOOK`] with a
+        // valid closure before registering the hook (this function).
+        // To access the closure we move it out of the cell and put it back
+        // after it returned. For this to work we need to prevent recursion by
+        // dropping injected events. Otherwise we would try to take the closuer
+        // twice and the `unwrap()` call would fail the second time.
+        let mut hook = state.take().unwrap();
+        handled = hook(key_event);
+        state.set(Some(hook));
     });
 
     if handled {
