@@ -82,7 +82,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut kb = VirtualKeyboard::new(layout);
     let mut locked_layer = kb.locked_layer();
-    let _kbhook = KeyboardHook::set(|mut key_event| {
+    let _kbhook = KeyboardHook::set(move |mut key_event| {
         if !ui.is_enabled() {
             return false;
         }

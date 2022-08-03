@@ -2,7 +2,6 @@
 
 use std::cell::RefCell;
 use std::fmt::Display;
-use std::marker::PhantomData;
 use std::{mem, ptr};
 
 use encode_unicode::CharExt;
@@ -11,7 +10,7 @@ use winapi::shared::minwindef::*;
 use winapi::shared::windef::*;
 use winapi::um::winuser::*;
 
-type HookFn<'a> = dyn FnMut(KeyEvent) -> bool + 'a;
+type HookFn = dyn FnMut(KeyEvent) -> bool;
 
 thread_local! {
     /// Stores the hook callback for the current thread.
@@ -20,17 +19,16 @@ thread_local! {
 
 #[derive(Default)]
 struct HookState {
-    hook: Option<Box<HookFn<'static>>>,
+    hook: Option<Box<HookFn>>,
 }
 
 /// Wrapper for the low-level keyboard hook API.
 /// Automatically unregisters the hook when dropped.
-pub struct KeyboardHook<'a> {
+pub struct KeyboardHook {
     handle: HHOOK,
-    lifetime: PhantomData<&'a ()>,
 }
 
-impl<'a> KeyboardHook<'a> {
+impl KeyboardHook {
     /// Sets the low-level keyboard hook for this thread.
     ///
     /// The closure receives key press and key release events. When the closure
@@ -45,7 +43,7 @@ impl<'a> KeyboardHook<'a> {
     ///
     /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediatelly be unregistered and not work."]
-    pub fn set(callback: impl FnMut(KeyEvent) -> bool + 'a) -> KeyboardHook<'a> {
+    pub fn set(callback: impl FnMut(KeyEvent) -> bool + 'static) -> KeyboardHook {
         HOOK_STATE.with(|state| {
             let mut state = state.borrow_mut();
             assert!(
@@ -53,14 +51,7 @@ impl<'a> KeyboardHook<'a> {
                 "Only one keyboard hook can be registered per thread."
             );
 
-            // The rust compiler needs type annotations to create a trait object rather than a
-            // specialized boxed closure so that we can use transmute in the next step.
-            let boxed_cb: Box<HookFn<'a>> = Box::new(callback);
-
-            // Safety: Transmuting to 'static lifetime is required to put the closure in thread
-            // local storage. It is safe to do so because we properly unregister the hook on drop
-            // after which the global (thread local) variable `HOOK` will not be acccesed anymore.
-            state.hook = Some(unsafe { mem::transmute(boxed_cb) });
+            state.hook = Some(Box::new(callback));
 
             KeyboardHook {
                 handle: unsafe {
@@ -68,13 +59,12 @@ impl<'a> KeyboardHook<'a> {
                         .as_mut()
                         .expect("Failed to install low-level keyboard hook.")
                 },
-                lifetime: PhantomData,
             }
         })
     }
 }
 
-impl<'a> Drop for KeyboardHook<'a> {
+impl Drop for KeyboardHook {
     fn drop(&mut self) {
         unsafe { UnhookWindowsHookEx(self.handle) };
         HOOK_STATE.with(|state| state.take());
