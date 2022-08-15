@@ -10,9 +10,9 @@ repository = "https://github.com/timokroeger/kbremap"
 [dependencies]
 anyhow = "1.0"
 argh = "0.1.4"
-encode_unicode = "0.3.6"
+encode_unicode = "1.0"
 map_vec = "0.3.0"
-native-windows-gui = { version = "1.0.12", features = [
+native-windows-gui = { version = "1.0", features = [
     "cursor",
     "embed-resource",
     "menu",
@@ -24,14 +24,17 @@ petgraph = { version = "0.6.0", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 single-instance = "0.3.2"
 toml = "0.5.7"
-widestring = "1.0.0-beta.1"
+widestring = "1.0"
 winapi = { version = "0.3.9", features = ["consoleapi", "wincon"] }
 
 [build-dependencies]
 winres = "0.1.12"
 
+# Size optimized build:
+# `cargo +nightly build --release -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target i686-pc-windows-msvc`
 [profile.release]
 lto = true
 opt-level = "z"
 codegen-units = 1
 panic = "abort"
+strip = true
