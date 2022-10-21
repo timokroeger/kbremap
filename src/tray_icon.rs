@@ -56,7 +56,7 @@ impl TrayIconData {
     fn update_autostart(&self) {
         let state = self.state.borrow();
         self.tray_menu_autostart
-            .set_checked(state.autostart.is_registered())
+            .set_checked(state.autostart.is_registered());
     }
 
     fn toggle_autostart(&self) {
@@ -100,10 +100,6 @@ impl TrayIconData {
             self.tray_menu_disable.set_checked(true);
         }
     }
-
-    fn exit(&self) {
-        native_windows_gui::stop_thread_dispatch();
-    }
 }
 
 pub struct TrayIcon {
@@ -129,13 +125,13 @@ impl TrayIcon {
         Icon::builder()
             .source_embed(Some(&data.resources))
             .source_embed_id(resources::ICON_KEYBOARD)
-            .size(Some((0, 0))) // makes the icon less blury
+            .size(Some((0, 0))) // makes the icon less blurry
             .build(&mut data.icon_enabled)?;
 
         Icon::builder()
             .source_embed(Some(&data.resources))
             .source_embed_id(resources::ICON_KEYBOARD_DELETE)
-            .size(Some((0, 0))) // makes the icon less blury
+            .size(Some((0, 0))) // makes the icon less blurry
             .build(&mut data.icon_disabled)?;
 
         // Controls
@@ -191,7 +187,7 @@ impl TrayIcon {
             } else if handle == data.tray_menu_disable {
                 data.toggle_disable();
             } else if handle == data.tray_menu_exit {
-                data.exit();
+                native_windows_gui::stop_thread_dispatch();
             }
         };
         let handler =

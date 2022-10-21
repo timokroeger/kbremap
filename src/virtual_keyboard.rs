@@ -78,7 +78,7 @@ impl VirtualKeyboard {
             // reversal for layer locking easier.
             match edges.last_mut() {
                 Some(last) if last.0 == modifier.layer_from && last.1 == modifier.layer_to => {
-                    last.2.push(modifier.scan_code)
+                    last.2.push(modifier.scan_code);
                 }
                 _ => edges.push((
                     modifier.layer_from,
@@ -127,8 +127,6 @@ impl VirtualKeyboard {
                 .find(|edge| edge.weight().contains(&self.pressed_modifiers[i]))
             {
                 layer = edge.target();
-            } else {
-                continue;
             }
         }
         layer
@@ -201,7 +199,7 @@ impl VirtualKeyboard {
         self.update_layer_history();
     }
 
-    /// Returs the key action associated with the scan code press.
+    /// Returns the key action associated with the scan code press.
     pub fn press_key(&mut self, scan_code: u16) -> Option<KeyAction> {
         // Get the active action if the key is already pressed so that we can
         // send the correct repeated key press or key up event.
@@ -227,7 +225,7 @@ impl VirtualKeyboard {
         action
     }
 
-    /// Returs the key action associated with the scan code release.
+    /// Returns the key action associated with the scan code release.
     pub fn release_key(&mut self, scan_code: u16) -> Option<KeyAction> {
         // Release from pressed modifiers if it was one.
         if let Some(idx) = self

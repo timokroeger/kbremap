@@ -42,7 +42,7 @@ impl AutoStartEntry {
                 self.name.as_ptr(),
                 RRF_RT_REG_SZ,
                 ptr::null_mut(),
-                &mut path_buf as *mut _ as _,
+                ptr::addr_of_mut!(path_buf).cast(),
                 &mut path_len as _,
             ) == 0;
 
@@ -65,7 +65,7 @@ impl AutoStartEntry {
                 self.name.as_ptr(),
                 0,
                 REG_SZ,
-                self.cmd.as_ptr() as _,
+                self.cmd.as_ptr().cast(),
                 ((self.cmd.len() + 1) * 2) as _,
             )
         };

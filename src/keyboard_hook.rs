@@ -32,7 +32,7 @@ impl KeyboardHook {
     /// key return `true` and use [`send_key()`].
     ///
     /// Panics when a hook is already registered from the same thread.
-    #[must_use = "The hook will immediatelly be unregistered and not work."]
+    #[must_use = "The hook will immediately be unregistered and not work."]
     pub fn set(callback: impl FnMut(KeyEvent) -> bool + 'static) -> KeyboardHook {
         HOOK.with(|state| {
             assert!(
@@ -56,7 +56,7 @@ impl KeyboardHook {
 impl Drop for KeyboardHook {
     fn drop(&mut self) {
         unsafe { UnhookWindowsHookEx(self.handle) };
-        HOOK.with(|state| state.take());
+        HOOK.with(Cell::take);
     }
 }
 
@@ -146,7 +146,7 @@ unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM)
         // valid closure before registering the hook (this function).
         // To access the closure we move it out of the cell and put it back
         // after it returned. For this to work we need to prevent recursion by
-        // dropping injected events. Otherwise we would try to take the closuer
+        // dropping injected events. Otherwise we would try to take the closure
         // twice and the `unwrap()` call would fail the second time.
         let mut hook = state.take().unwrap();
         handled = hook(key_event);
@@ -237,7 +237,7 @@ pub fn get_virtual_key(c: char) -> Option<u8> {
             return None;
         }
 
-        // Check if the modifer keys, which are required to type the character, are pressed.
+        // Check if the modifier keys, which are required to type the character, are pressed.
         let modifier_pressed = |vk| (GetKeyState(vk) as u16) & 0x8000 != 0;
 
         let shift = vk_state & 0x100 != 0;
