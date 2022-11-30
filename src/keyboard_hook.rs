@@ -212,10 +212,18 @@ fn key_input_from_event(key: KeyEvent) -> KEYBDINPUT {
 /// single key press/release.
 pub fn get_virtual_key(c: char) -> Option<u8> {
     unsafe {
-        let layout = GetKeyboardLayout(GetWindowThreadProcessId(
+        let mut layout = GetKeyboardLayout(GetWindowThreadProcessId(
             GetForegroundWindow(),
             ptr::null_mut(),
         ));
+        // For console applications (e.g. cmd.exe) GetKeyboardLayout() will
+        // return 0. Windows has no public API to get the current layout of
+        // console applications: https://github.com/microsoft/terminal/issues/83
+        // Fall back to the layout used by our process which is hopefully the
+        // correct one for the console too.
+        if layout.is_null() {
+            layout = GetKeyboardLayout(0);
+        }
         let vk_state = VkKeyScanExW(c.to_utf16()[0], layout);
         if vk_state == -1 {
             // No virtual key for this character exists on the current layout.
