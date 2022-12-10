@@ -125,13 +125,11 @@ impl TrayIcon {
         Icon::builder()
             .source_embed(Some(&data.resources))
             .source_embed_id(resources::ICON_KEYBOARD)
-            .size(Some((0, 0))) // makes the icon less blurry
             .build(&mut data.icon_enabled)?;
 
         Icon::builder()
             .source_embed(Some(&data.resources))
             .source_embed_id(resources::ICON_KEYBOARD_DELETE)
-            .size(Some((0, 0))) // makes the icon less blurry
             .build(&mut data.icon_disabled)?;
 
         // Controls
