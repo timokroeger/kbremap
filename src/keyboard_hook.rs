@@ -167,11 +167,8 @@ pub fn send_key(key: KeyEvent) {
 
         let n_inputs = match key.key {
             KeyType::VirtualKey(vk) => {
-                let mut kb_input = key_input_from_event(key);
-                kb_input.wVk = vk.into();
-
                 inputs[0].type_ = INPUT_KEYBOARD;
-                *inputs[0].u.ki_mut() = kb_input;
+                *inputs[0].u.ki_mut() = key_input_from_event(key, vk.into());
                 1
             }
             KeyType::Unicode(c) => {
@@ -181,7 +178,7 @@ pub fn send_key(key: KeyEvent) {
                     .iter_mut()
                     .zip(c.to_utf16())
                     .map(|(input, c)| {
-                        let mut kb_input: KEYBDINPUT = key_input_from_event(key);
+                        let mut kb_input: KEYBDINPUT = key_input_from_event(key, 0);
                         kb_input.wScan = c;
                         kb_input.dwFlags |= KEYEVENTF_UNICODE;
                         input.type_ = INPUT_KEYBOARD;
@@ -199,13 +196,14 @@ pub fn send_key(key: KeyEvent) {
     }
 }
 
-fn key_input_from_event(key: KeyEvent) -> KEYBDINPUT {
-    let mut kb_input: KEYBDINPUT = unsafe { mem::zeroed() };
-    if key.up {
-        kb_input.dwFlags |= KEYEVENTF_KEYUP;
+fn key_input_from_event(key: KeyEvent, virtual_key: u16) -> KEYBDINPUT {
+    KEYBDINPUT {
+        wVk: virtual_key,
+        wScan: key.scan_code,
+        dwFlags: if key.up { KEYEVENTF_KEYUP } else { 0 },
+        time: key.time,
+        dwExtraInfo: 0,
     }
-    kb_input.time = key.time;
-    kb_input
 }
 
 /// Returns a virtual key code if the requested character can be typed with a
