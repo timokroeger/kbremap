@@ -89,7 +89,7 @@ fn main() -> Result<()> {
 
         // Special caps lock handling:
         // Make sure the caps lock state stays in sync with the configured layer.
-        if let Some(caps_lock_layer) = &config.caps_lock_layer {
+        if let Some(caps_lock_layer) = config.caps_lock_layer() {
             if (kb.locked_layer() == caps_lock_layer) != keyboard_hook::caps_lock_enabled() {
                 println!("toggle caps lock");
                 keyboard_hook::send_key(KeyEvent {

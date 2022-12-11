@@ -8,8 +8,7 @@ use crate::layout::{KeyAction, Layout, LayoutBuilder};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub caps_lock_layer: Option<String>,
-
+    caps_lock_layer: Option<String>,
     layers: HashMap<String, Vec<Mapping>>,
 }
 
@@ -100,5 +99,9 @@ impl Config {
             }
         }
         layout_builder.build()
+    }
+
+    pub fn caps_lock_layer(&self) -> Option<&str> {
+        self.caps_lock_layer.as_deref()
     }
 }

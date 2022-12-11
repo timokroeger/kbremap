@@ -39,8 +39,8 @@ fn main() {
     let manifest = manifest.replace("?VERSION?", &version);
 
     // Minimize XML
-    let manifest = manifest.replace("\r", "");
-    let manifest = manifest.replace("\n", "");
+    let manifest = manifest.replace('\r', "");
+    let manifest = manifest.replace('\n', "");
     let manifest = manifest.replace("    ", "");
 
     winres::WindowsResource::new()
