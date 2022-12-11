@@ -69,13 +69,12 @@ fn main() -> anyhow::Result<()> {
     let config = Config::from_toml(&config_str)?;
 
     let layout = config.to_layout();
+    let mut kb = VirtualKeyboard::new(layout);
 
     native_windows_gui::init()?;
-    let ui = Rc::new(TrayIcon::new(console_available)?);
-
-    let mut kb = VirtualKeyboard::new(layout);
-    let mut locked_layer = kb.locked_layer().to_string();
+    let ui = Rc::new(TrayIcon::new(console_available, &kb)?);
     let weak_ui = Rc::downgrade(&ui);
+
     let kbhook = KeyboardHook::set(move |mut key_event| {
         let remap = if key_event.up {
             kb.release_key(key_event.scan_code)
@@ -100,13 +99,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
 
-        if kb.locked_layer() != locked_layer {
-            locked_layer = kb.locked_layer().to_string();
-            weak_ui
-                .upgrade()
-                .unwrap()
-                .show_message(&format!("Layer \"{locked_layer}\" locked",));
-        }
+        weak_ui.upgrade().unwrap().set_locked_layer(kb.locked_layer());
 
         let mut log_line = key_event.to_string();
 
