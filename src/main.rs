@@ -2,16 +2,17 @@
 #![cfg_attr(test, windows_subsystem = "console")]
 
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::{env, fs, io};
+use std::{env, fs};
 
 mod resources;
 mod tray_icon;
 mod winapi_util;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context, Result};
 use kbremap::config::Config;
 use kbremap::keyboard_hook::{self, KeyEvent, KeyType, KeyboardHook};
 use kbremap::layout::KeyAction;
@@ -21,15 +22,7 @@ use winapi::um::winuser::*; // Virtual key constants VK_*
 
 use crate::tray_icon::TrayIcon;
 
-/// Custom keyboard layouts for windows.
-#[derive(argh::FromArgs)]
-struct CommandLineArguments {
-    /// path to configuration file (default: `config.toml`)
-    #[argh(option)]
-    config: Option<String>,
-}
-
-fn config_path(config_file: &str) -> io::Result<PathBuf> {
+fn config_path(config_file: &OsStr) -> Result<PathBuf> {
     let mut path_buf;
     let mut config_file = Path::new(config_file);
 
@@ -42,18 +35,23 @@ fn config_path(config_file: &str) -> io::Result<PathBuf> {
         config_file = path_buf.as_path();
     }
 
-    fs::canonicalize(config_file)
+    config_file.canonicalize().context(format!(
+        "Cannot load configuration {}",
+        config_file.display()
+    ))
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
     let console_available = unsafe {
         use winapi::um::wincon::*;
         AttachConsole(ATTACH_PARENT_PROCESS) != 0
     };
 
-    let args: CommandLineArguments = argh::from_env();
-    let config_file = config_path(args.config.as_deref().unwrap_or("config.toml"))?;
+    let config_file = env::args_os()
+        .nth(1)
+        .unwrap_or_else(|| "config.toml".into());
+    let config_file = config_path(&config_file)?;
 
     // Prevent duplicate instances if windows re-runs autostarts when rebooting after OS updates.
     let mut hasher = DefaultHasher::new();
