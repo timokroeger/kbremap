@@ -1,6 +1,6 @@
 //! Remapping and layer switching logic.
 
-use std::collections::{BTreeSet, BTreeMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
