@@ -174,7 +174,7 @@ impl TrayIcon {
             .text("Show debug output")
             .parent(&handles.tray_menu)
             .check(console_available)
-            .disabled(!console_available)
+            .disabled(console_available)
             .build(&mut handles.tray_menu_debug)?;
 
         MenuItem::builder()
