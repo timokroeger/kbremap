@@ -69,20 +69,12 @@ fn main() -> anyhow::Result<()> {
     let config = Config::from_toml(&config_str)?;
 
     let layout = config.to_layout();
-    let layer_names = layout.layer_names().clone();
-
-    let caps_lock_layer_idx = config.caps_lock_layer.map(|l| {
-        layer_names
-            .iter()
-            .position(|name| l == *name)
-            .expect("caps lock layer not found") as u8
-    });
 
     native_windows_gui::init()?;
     let ui = Rc::new(TrayIcon::new(console_available)?);
 
     let mut kb = VirtualKeyboard::new(layout);
-    let mut locked_layer = kb.locked_layer();
+    let mut locked_layer = kb.locked_layer().to_string();
     let weak_ui = Rc::downgrade(&ui);
     let kbhook = KeyboardHook::set(move |mut key_event| {
         let remap = if key_event.up {
@@ -92,7 +84,7 @@ fn main() -> anyhow::Result<()> {
         };
 
         // Special caps lock handling
-        if let Some(caps_lock_layer) = caps_lock_layer_idx {
+        if let Some(caps_lock_layer) = &config.caps_lock_layer {
             if (kb.locked_layer() == caps_lock_layer) != keyboard_hook::caps_lock_enabled() {
                 println!("toggle caps lock");
                 keyboard_hook::send_key(KeyEvent {
@@ -109,11 +101,11 @@ fn main() -> anyhow::Result<()> {
         }
 
         if kb.locked_layer() != locked_layer {
-            locked_layer = kb.locked_layer();
-            weak_ui.upgrade().unwrap().show_message(&format!(
-                "Layer \"{}\" locked",
-                layer_names[locked_layer as usize]
-            ));
+            locked_layer = kb.locked_layer().to_string();
+            weak_ui
+                .upgrade()
+                .unwrap()
+                .show_message(&format!("Layer \"{locked_layer}\" locked",));
         }
 
         let mut log_line = key_event.to_string();

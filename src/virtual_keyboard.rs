@@ -106,12 +106,16 @@ impl VirtualKeyboard {
         }
     }
 
-    pub fn active_layer(&self) -> u8 {
-        self.layer_history[self.layer_history.len() - 1].index() as u8
+    fn active_layer_idx(&self) -> usize {
+        self.layer_history[self.layer_history.len() - 1].index()
     }
 
-    pub fn locked_layer(&self) -> u8 {
-        self.locked_layer.index() as u8
+    pub fn active_layer(&self) -> &str {
+        &self.layout.layer_names()[self.active_layer_idx()]
+    }
+
+    pub fn locked_layer(&self) -> &str {
+        &self.layout.layer_names()[self.locked_layer.index()]
     }
 
     /// Returns the layer activated by the currently pressed modifier keys.
@@ -239,7 +243,7 @@ impl VirtualKeyboard {
             // Update layer locks on release. If we changed the lock state on press,
             // a repeated key event would unlock the layer again right away.
             let key = self.layout.get_key(scan_code);
-            if let Some(lock_layer) = key.layer_lock(self.active_layer()) {
+            if let Some(lock_layer) = key.layer_lock(self.active_layer_idx() as u8) {
                 self.lock_layer(lock_layer);
             } else if self.locked_layer != self.base_layer {
                 // Try to unlock a previously locked layer
