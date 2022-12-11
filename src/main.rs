@@ -73,9 +73,16 @@ fn main() -> anyhow::Result<()> {
 
     native_windows_gui::init()?;
     let ui = Rc::new(TrayIcon::new(console_available, &kb)?);
-    let weak_ui = Rc::downgrade(&ui);
+
+    // Use a weak pointer to prevent a cyclic reference between the UI and the
+    // hook callback.
+    let ui_hook = Rc::downgrade(&ui);
 
     let kbhook = KeyboardHook::set(move |mut key_event| {
+        // The UI must not be invalidated before unregistering the hook.
+        // We can unwrap here because we tranfer ownership of the hook to the UI.
+        let ui = ui_hook.upgrade().unwrap();
+
         let remap = if key_event.up {
             kb.release_key(key_event.scan_code)
         } else {
@@ -99,7 +106,8 @@ fn main() -> anyhow::Result<()> {
             }
         }
 
-        weak_ui.upgrade().unwrap().set_locked_layer(kb.locked_layer());
+        ui.set_active_layer(kb.active_layer());
+        ui.set_locked_layer(kb.locked_layer());
 
         let mut log_line = key_event.to_string();
 

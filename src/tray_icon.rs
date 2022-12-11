@@ -156,6 +156,7 @@ impl TrayIcon {
 
         TrayNotification::builder()
             .icon(Some(&handles.icon_enabled))
+            .tip(Some(&tooltip_message(kb.active_layer())))
             .parent(&handles.window)
             .build(&mut handles.tray)?;
 
@@ -253,6 +254,10 @@ impl TrayIcon {
         self.data.handles.tray_menu_disable.set_enabled(true);
     }
 
+    pub fn set_active_layer(&self, layer: &str) {
+        self.data.handles.tray.set_tip(&tooltip_message(layer));
+    }
+
     pub fn set_locked_layer(&self, layer: &str) {
         let mut state = self.data.state.borrow_mut();
         if state.locked_layer != layer {
@@ -263,4 +268,8 @@ impl TrayIcon {
                 .show(&format!("Layer \"{layer}\" locked"), None, None, None);
         }
     }
+}
+
+fn tooltip_message(layer: &str) -> String {
+    format!("Active Layer:\n{layer}")
 }
