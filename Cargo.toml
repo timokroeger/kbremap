@@ -10,7 +10,6 @@ repository = "https://github.com/timokroeger/kbremap"
 [dependencies]
 anyhow = "1.0"
 encode_unicode = "1.0"
-map_vec = "0.3.0"
 native-windows-gui = { version = "1.0", features = [
     "cursor",
     "embed-resource",

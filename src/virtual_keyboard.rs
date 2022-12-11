@@ -1,6 +1,7 @@
 //! Remapping and layer switching logic.
 
-use map_vec::{Map, Set};
+use std::collections::{BTreeSet, BTreeMap};
+
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::{algo, Directed, Graph};
@@ -19,7 +20,7 @@ pub struct VirtualKeyboard {
     layout: Layout,
 
     /// Set of unique scan codes used for layer switching.
-    modifiers_scan_codes: Set<u16>,
+    modifiers_scan_codes: BTreeSet<u16>,
 
     /// Immutable graph used as reference to rebuild the active layer graph when
     /// the locked layer changes.
@@ -44,7 +45,7 @@ pub struct VirtualKeyboard {
 
     /// Keeps track of all pressed keys so that we always can send the matching
     /// action after key release, even when the layer has changed.
-    pressed_keys: Map<u16, Option<KeyAction>>,
+    pressed_keys: BTreeMap<u16, Option<KeyAction>>,
 }
 
 impl VirtualKeyboard {
@@ -62,7 +63,7 @@ impl VirtualKeyboard {
                 .then(a.layer_to.cmp(&b.layer_to))
         });
 
-        let mut modifiers_scan_codes = Set::new();
+        let mut modifiers_scan_codes = BTreeSet::new();
         let mut edges: Vec<(u8, u8, Vec<u16>)> = Vec::new();
         for modifier in modifiers {
             modifiers_scan_codes.insert(modifier.scan_code);
@@ -102,7 +103,7 @@ impl VirtualKeyboard {
             locked_layer: base_layer,
             layer_history: vec![base_layer],
             pressed_modifiers: Vec::new(),
-            pressed_keys: Map::new(),
+            pressed_keys: BTreeMap::new(),
         }
     }
 
