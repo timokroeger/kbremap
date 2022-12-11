@@ -1,17 +1,8 @@
 # `kbremap`
 
-```
-Usage: kbremap.exe [--config <config>]
-
 Custom keyboard layouts for windows.
 
-Options:
-  --config          path to configuration file (default: `config.toml`)
-  --help            display usage information
-```
-
-Configuration loosely inspired by custom keyboard firmware like [QMK](https://qmk.fm/).
-Comments in the `config.toml` file explain how to configure the Dvorak layout.
+`config.toml` is a well commented example config for the Dvorak layout.
 
 ## Features
 * Remap any key to any other key
@@ -28,8 +19,10 @@ Comments in the `config.toml` file explain how to configure the Dvorak layout.
 * Optional QWERTY/QWERTZ layout for shortcuts with CTRL, ALT and WIN modifiers
 
 ## Known issues
+* Not working for RDP in full screen mode (or when "Apply Windows key combinations:
+  On the remote computer" is set). Using a second instance of kbremap on the remote
+  machine works fine as workaround.
 * Compose key not avaible (yet)
-* Layer locking always enabled for every layer that can be reached by two different keys
 
 ## License
 

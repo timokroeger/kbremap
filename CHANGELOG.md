@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.5.0]
+- The tray icon tooltip shows the active layer
+- Improved font rendering on hidpi screens
+- Unregister hook when disabled
+
 ## [1.4.2] - 2022-08-16
 - Fix unsoundness issue in low level keyboard-hook
 - Fix dead keys for neo layout example config
