@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.5.0]
+## [1.5.0] - 2022-12-11
 - The tray icon tooltip shows the active layer
 - Improved font rendering on hidpi screens
 - Unregister hook when disabled
