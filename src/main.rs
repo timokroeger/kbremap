@@ -4,6 +4,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::{env, fs, io};
 
 mod resources;
@@ -78,15 +79,12 @@ fn main() -> anyhow::Result<()> {
     });
 
     native_windows_gui::init()?;
-    let ui = TrayIcon::new(console_available)?;
+    let ui = Rc::new(TrayIcon::new(console_available)?);
 
     let mut kb = VirtualKeyboard::new(layout);
     let mut locked_layer = kb.locked_layer();
-    let _kbhook = KeyboardHook::set(move |mut key_event| {
-        if !ui.is_enabled() {
-            return false;
-        }
-
+    let weak_ui = Rc::downgrade(&ui);
+    let kbhook = KeyboardHook::set(move |mut key_event| {
         let remap = if key_event.up {
             kb.release_key(key_event.scan_code)
         } else {
@@ -112,7 +110,7 @@ fn main() -> anyhow::Result<()> {
 
         if kb.locked_layer() != locked_layer {
             locked_layer = kb.locked_layer();
-            ui.show_message(&format!(
+            weak_ui.upgrade().unwrap().show_message(&format!(
                 "Layer \"{}\" locked",
                 layer_names[locked_layer as usize]
             ));
@@ -149,6 +147,8 @@ fn main() -> anyhow::Result<()> {
         println!("{}", log_line);
         handled
     });
+
+    ui.set_hook(kbhook);
 
     // The event loop is also required for the low-level keyboard hook to work.
     native_windows_gui::dispatch_thread_events();

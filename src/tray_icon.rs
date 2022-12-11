@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::env;
 use std::rc::Rc;
 
+use kbremap::keyboard_hook::KeyboardHook;
 use native_windows_gui::{
     EmbedResource, Event, EventHandler, GlobalCursor, Icon, Menu, MenuItem, MessageWindow,
     NwgError, RawEventHandler, TrayNotification,
@@ -15,7 +16,7 @@ use crate::resources;
 use crate::winapi_util::AutoStartEntry;
 
 struct State {
-    disabled: bool,
+    hook: Option<KeyboardHook>,
     autostart: AutoStartEntry,
 }
 
@@ -23,7 +24,7 @@ impl Default for State {
     fn default() -> Self {
         let cmd = env::current_exe().unwrap();
         Self {
-            disabled: Default::default(),
+            hook: Default::default(),
             autostart: AutoStartEntry::new(
                 u16cstr!("kbremap").into(),
                 U16CString::from_os_str(cmd).unwrap(),
@@ -89,15 +90,16 @@ impl TrayIconData {
 
     fn toggle_disable(&self) {
         let mut state = self.state.borrow_mut();
+        let hook = state.hook.as_mut().unwrap();
 
-        if state.disabled {
-            state.disabled = false;
-            self.tray.set_icon(&self.icon_enabled);
-            self.tray_menu_disable.set_checked(false);
-        } else {
-            state.disabled = true;
+        if hook.active() {
+            hook.disable();
             self.tray.set_icon(&self.icon_disabled);
             self.tray_menu_disable.set_checked(true);
+        } else {
+            hook.enable();
+            self.tray.set_icon(&self.icon_enabled);
+            self.tray_menu_disable.set_checked(false);
         }
     }
 }
@@ -153,15 +155,14 @@ impl TrayIcon {
         MenuItem::builder()
             .text("Show debug output")
             .parent(&data.tray_menu)
+            .check(console_available)
+            .disabled(!console_available)
             .build(&mut data.tray_menu_debug)?;
-        if console_available {
-            data.tray_menu_debug.set_enabled(false);
-            data.tray_menu_debug.set_checked(true);
-        }
 
         MenuItem::builder()
             .text("Disable")
             .parent(&data.tray_menu)
+            .disabled(true)
             .build(&mut data.tray_menu_disable)?;
 
         MenuItem::builder()
@@ -230,8 +231,9 @@ impl TrayIcon {
         })
     }
 
-    pub fn is_enabled(&self) -> bool {
-        !self.data.state.borrow().disabled
+    pub fn set_hook(&self, hook: KeyboardHook) {
+        self.data.state.borrow_mut().hook = Some(hook);
+        self.data.tray_menu_disable.set_enabled(true);
     }
 
     pub fn show_message(&self, message: &str) {

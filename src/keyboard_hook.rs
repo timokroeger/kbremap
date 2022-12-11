@@ -42,20 +42,37 @@ impl KeyboardHook {
 
             state.set(Some(Box::new(callback)));
 
-            KeyboardHook {
-                handle: unsafe {
-                    SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), ptr::null_mut(), 0)
-                        .as_mut()
-                        .expect("Failed to install low-level keyboard hook.")
-                },
-            }
+            let mut this = KeyboardHook {
+                handle: ptr::null_mut(),
+            };
+            this.enable();
+            this
         })
+    }
+
+    pub fn enable(&mut self) {
+        unsafe {
+            self.handle = SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), ptr::null_mut(), 0)
+                .as_mut()
+                .expect("Failed to install low-level keyboard hook.");
+        }
+    }
+
+    pub fn disable(&mut self) {
+        unsafe {
+            assert!(UnhookWindowsHookEx(self.handle) == TRUE);
+            self.handle = ptr::null_mut();
+        };
+    }
+
+    pub fn active(&self) -> bool {
+        !self.handle.is_null()
     }
 }
 
 impl Drop for KeyboardHook {
     fn drop(&mut self) {
-        unsafe { UnhookWindowsHookEx(self.handle) };
+        self.disable();
         HOOK.with(Cell::take);
     }
 }
