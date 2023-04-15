@@ -258,11 +258,17 @@ impl VirtualKeyboard {
             }
         }
 
-        // Release the pressed key, or ignore it when the key was released without
-        // it being pressed before.
-        self.pressed_keys
-            .remove(&scan_code)
-            .unwrap_or(Some(KeyAction::Ignore))
+        // Release the pressed key.
+        // If not found in the set of pressed keys forward the release action.
+        // Forwarding instead of ignoring is important in following scenario:
+        // 1. hook running in a user mode process
+        // 2. an elevated window receives a key down event (which our hook does
+        //    not get and hence is not in our set of pressed keys) e.g. alt
+        // 3. switching to a non-elevated window (e.g. alt+tab)
+        // 4. release of key key e.g. alt
+        // --> If we don ot forward the key release here the alt key is stuck
+        //     until it is pressed again.
+        self.pressed_keys.remove(&scan_code).flatten()
     }
 }
 

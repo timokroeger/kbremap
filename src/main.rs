@@ -95,7 +95,6 @@ fn main() -> Result<()> {
         // Make sure the caps lock state stays in sync with the configured layer.
         if let Some(caps_lock_layer) = config.caps_lock_layer() {
             if (kb.locked_layer() == caps_lock_layer) != keyboard_hook::caps_lock_enabled() {
-                println!("toggle caps lock");
                 keyboard_hook::send_key(KeyEvent {
                     up: false,
                     key: KeyType::VirtualKey(VK_CAPITAL as _),
@@ -106,6 +105,7 @@ fn main() -> Result<()> {
                     key: KeyType::VirtualKey(VK_CAPITAL as _),
                     ..key_event
                 });
+                println!("caps lock toggled");
             }
         }
 
@@ -113,6 +113,7 @@ fn main() -> Result<()> {
         ui.set_locked_layer(kb.locked_layer());
 
         let Some(remap) = remap else {
+            println!("{} forwarded", key_event);
             return false;
         };
 
