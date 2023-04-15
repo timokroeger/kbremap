@@ -1,16 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+## [1.5.1] - 2023-04-15
+
+- Prevent crash when typing while text is selected in the debug console.
+- Forward unknown key release events: Fixes stuck ALT key when switching from a window with elevated rights. 
+
 ## [1.5.0] - 2022-12-11
+
 - The tray icon tooltip shows the active layer
 - Improved font rendering on hidpi screens
 - Unregister hook when disabled
 
 ## [1.4.2] - 2022-08-16
+
 - Fix unsoundness issue in low level keyboard-hook
 - Fix dead keys for neo layout example config
 - Update dependencies
 
 ## [1.4.1] - 2022-04-11
+
 - Removing `tracing` dependency
 - Fix bug where the layer graph was wrong for some modifier configurations
 
@@ -72,6 +82,13 @@
 Initial Release
 
 
-[Unreleased]: https://github.com/timokroeger/kbremap/compare/v1.1.0..HEAD
+[Unreleased]: https://github.com/timokroeger/kbremap/compare/v1.5.1..HEAD
+[1.5.1]: https://github.com/timokroeger/kbremap/compare/v1.5.0..v1.5.1
+[1.5.0]: https://github.com/timokroeger/kbremap/compare/v1.4.2..v1.5.0
+[1.4.2]: https://github.com/timokroeger/kbremap/compare/v1.4.1..v1.4.2
+[1.4.1]: https://github.com/timokroeger/kbremap/compare/v1.4.0..v1.4.1
+[1.4.0]: https://github.com/timokroeger/kbremap/compare/v1.3.0..v1.4.0
+[1.3.0]: https://github.com/timokroeger/kbremap/compare/v1.2.0..v1.3.0
+[1.2.0]: https://github.com/timokroeger/kbremap/compare/v1.1.0..v1.2.0
 [1.1.0]: https://github.com/timokroeger/kbremap/compare/v1.0.0..v1.1.0
 [1.0.0]: https://github.com/timokroeger/kbremap/releases/tag/v1.0.0
