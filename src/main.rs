@@ -17,8 +17,9 @@ use kbremap::config::Config;
 use kbremap::keyboard_hook::{self, KeyEvent, KeyType, KeyboardHook};
 use kbremap::layout::KeyAction;
 use kbremap::virtual_keyboard::VirtualKeyboard;
-use single_instance::SingleInstance;
-use winapi::um::winuser::*; // Virtual key constants VK_*
+use widestring::U16CString;
+use winapi::um::winuser::*;
+use winapi_util::register_instance; // Virtual key constants VK_*
 
 use crate::tray_icon::TrayIcon;
 
@@ -61,9 +62,8 @@ fn main() -> Result<()> {
     let mut hasher = DefaultHasher::new();
     env::current_exe()?.hash(&mut hasher);
     config_file.hash(&mut hasher);
-    let instance_key = format!("kbremap-{:016x}", hasher.finish());
-    let instance = SingleInstance::new(&instance_key)?;
-    if !instance.is_single() {
+    let instance_key = U16CString::from_str(format!("kbremap-{:016x}", hasher.finish())).unwrap();
+    if !register_instance(instance_key.as_ucstr()) {
         return Err(anyhow!("already running with the same configuration"));
     }
 

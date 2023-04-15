@@ -2,9 +2,12 @@ use std::{mem, ptr};
 
 use widestring::{u16cstr, U16CStr, U16CString};
 use winapi::shared::minwindef::*;
+use winapi::shared::winerror::*;
 use winapi::um::consoleapi::*;
+use winapi::um::errhandlingapi::*;
 use winapi::um::fileapi::*;
 use winapi::um::handleapi::*;
+use winapi::um::synchapi::*;
 use winapi::um::wincon::*;
 use winapi::um::winnt::*;
 use winapi::um::winreg::*;
@@ -100,5 +103,22 @@ pub fn disable_quick_edit_mode() {
             SetConsoleMode(console as _, mode);
         }
         CloseHandle(console);
+    }
+}
+
+// Returns true when this process is the first instance with the given name.
+pub fn register_instance(name: &U16CStr) -> bool {
+    unsafe {
+        let handle = CreateMutexW(ptr::null_mut(), 0, name.as_ptr());
+        assert!(!handle.is_null());
+
+        if GetLastError() != ERROR_ALREADY_EXISTS {
+            // Intentionally leak the mutex object to protect this instance
+            // of the process.
+            return true;
+        }
+
+        CloseHandle(handle);
+        false
     }
 }
