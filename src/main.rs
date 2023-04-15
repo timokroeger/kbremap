@@ -43,9 +43,13 @@ fn config_path(config_file: &OsStr) -> Result<PathBuf> {
 
 fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
-    let console_available = unsafe {
+    let mut console_available = false;
+    unsafe {
         use winapi::um::wincon::*;
-        AttachConsole(ATTACH_PARENT_PROCESS) != 0
+        if AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
+            console_available = true;
+            winapi_util::disable_quick_edit_mode();
+        }
     };
 
     let config_file = env::args_os()

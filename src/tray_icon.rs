@@ -14,7 +14,7 @@ use winapi::um::wincon::*;
 use winapi::um::winuser::*;
 
 use crate::resources;
-use crate::winapi_util::AutoStartEntry;
+use crate::winapi_util::{self, AutoStartEntry};
 
 struct State {
     hook: Option<KeyboardHook>,
@@ -94,6 +94,7 @@ impl TrayIconData {
         } else {
             unsafe {
                 AllocConsole();
+                winapi_util::disable_quick_edit_mode();
                 let console = GetConsoleWindow();
                 let console_menu = GetSystemMenu(console, 0);
                 DeleteMenu(console_menu, SC_CLOSE as _, MF_BYCOMMAND);

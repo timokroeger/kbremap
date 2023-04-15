@@ -158,16 +158,26 @@ unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM)
     }
 
     let mut handled = false;
-    HOOK.with(|state| {
-        // The unwrap cannot fail, because we have initialized [`HOOK`] with a
-        // valid closure before registering the hook (this function).
-        // To access the closure we move it out of the cell and put it back
-        // after it returned. For this to work we need to prevent recursion by
-        // dropping injected events. Otherwise we would try to take the closure
-        // twice and the `unwrap()` call would fail the second time.
-        let mut hook = state.take().unwrap();
-        handled = hook(key_event);
-        state.set(Some(hook));
+    HOOK.with(|hook| {
+        // To call the closure registered for the keyboard hook we need to
+        // take it out of the cell to get mutable access. When done we move
+        // the closure back into the cell.
+        // As long as we prevent recursion by dropping injected events, windows
+        // should not be calling the hook again while it is already executing.
+        // Which means we will never `take()` the cell twice.
+        if let Some(mut h) = hook.take() {
+            handled = h(key_event);
+            hook.set(Some(h));
+        } else {
+            // There is one special case with classical CMD windows:
+            // The "Quick Edit Mode" option which is enabled by default.
+            // Windows stops to read from stdout and stderr when the user
+            // selects characters in the cmd window.
+            // Any write to stdout (e.g. a call to `println!()`) blocks while
+            // "Quick Edit Mode" is active. The nasty part is that the key event
+            // which exits the "Quick Edit Mode" triggers the hook a second time
+            // before the blocked write to stdout can return.
+        }
     });
 
     if handled {

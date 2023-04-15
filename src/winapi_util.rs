@@ -2,6 +2,10 @@ use std::{mem, ptr};
 
 use widestring::{u16cstr, U16CStr, U16CString};
 use winapi::shared::minwindef::*;
+use winapi::um::consoleapi::*;
+use winapi::um::fileapi::*;
+use winapi::um::handleapi::*;
+use winapi::um::wincon::*;
 use winapi::um::winnt::*;
 use winapi::um::winreg::*;
 
@@ -75,5 +79,26 @@ impl AutoStartEntry {
         unsafe {
             RegDeleteValueW(self.key, self.name.as_ptr());
         }
+    }
+}
+
+pub fn disable_quick_edit_mode() {
+    unsafe {
+        let console = CreateFileA(
+            "CONIN$\0".as_ptr() as _,
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            ptr::null_mut(),
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            ptr::null_mut(),
+        );
+        let mut mode: u32 = 0;
+        if GetConsoleMode(console as _, &mut mode) != 0 {
+            mode &= !ENABLE_QUICK_EDIT_MODE;
+            mode |= ENABLE_EXTENDED_FLAGS;
+            SetConsoleMode(console as _, mode);
+        }
+        CloseHandle(console);
     }
 }
