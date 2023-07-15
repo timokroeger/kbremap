@@ -140,8 +140,7 @@ fn main() -> Result<()> {
     let menu = winapi_util::popupmenu_from_rc_numeric(resources::MENU);
 
     const WM_APP_TRAYICON: u32 = WM_APP + 873;
-    let tray_icon = TrayIcon::new(WM_APP_TRAYICON);
-    tray_icon.set_icon(icon_enabled);
+    let tray_icon = TrayIcon::new(WM_APP_TRAYICON, icon_enabled);
 
     let cmd = env::current_exe().unwrap();
     let autostart = AutoStartEntry::new(
@@ -197,8 +196,8 @@ fn main() -> Result<()> {
                 resources::MENU_STARTUP.into(),
                 if autostart.is_registered() {
                     MF_CHECKED
-                    } else {
-                        MF_UNCHECKED
+                } else {
+                    MF_UNCHECKED
                 },
             );
 
@@ -238,7 +237,7 @@ fn main() -> Result<()> {
                 _ => {}
             }
         },
-        _ => (),
+        _ => {}
     });
 
     Ok(())

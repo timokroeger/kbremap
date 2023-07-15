@@ -5,6 +5,11 @@ use windows_sys::Win32::System::LibraryLoader::*;
 use windows_sys::Win32::UI::Shell::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
+struct UserData {
+    msg_tray: u32,
+    icon: HICON,
+}
+
 pub struct TrayIcon {
     hwnd: HWND,
 }
@@ -12,6 +17,7 @@ pub struct TrayIcon {
 impl Drop for TrayIcon {
     fn drop(&mut self) {
         unsafe {
+            drop(Box::from_raw(userdata(self.hwnd)));
             Shell_NotifyIconA(NIM_DELETE, &notification_data(self.hwnd));
             DestroyWindow(self.hwnd);
         }
@@ -19,9 +25,9 @@ impl Drop for TrayIcon {
 }
 
 impl TrayIcon {
-    pub fn new(message: u32) -> Self {
+    pub fn new(msg_tray: u32, icon: HICON) -> Self {
         assert!(
-            (WM_APP..WM_APP + 0x4000).contains(&message),
+            (WM_APP..WM_APP + 0x4000).contains(&msg_tray),
             "message must be in the WM_APP range"
         );
 
@@ -57,19 +63,18 @@ impl TrayIcon {
             assert_ne!(hwnd, 0);
 
             // Set message as associated data
-            SetWindowLongPtrA(hwnd, GWLP_USERDATA, message as isize);
+            let userdata = Box::new(UserData { msg_tray, icon });
+            SetWindowLongPtrA(hwnd, GWLP_USERDATA, Box::into_raw(userdata) as isize);
 
             // Create the tray icon
-            let mut notification_data = notification_data(hwnd);
-            notification_data.uFlags = NIF_MESSAGE;
-            notification_data.uCallbackMessage = WM_USER;
-            Shell_NotifyIconA(NIM_ADD, &mut notification_data);
+            add_tray_icon(hwnd);
 
             Self { hwnd }
         }
     }
 
     pub fn set_icon(&self, icon: HICON) {
+        userdata(self.hwnd).icon = icon;
         let mut notification_data = notification_data(self.hwnd);
         notification_data.uFlags = NIF_ICON;
         notification_data.hIcon = icon;
@@ -79,13 +84,27 @@ impl TrayIcon {
     }
 }
 
-// Forward the message to the main event loop.
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if msg == WM_USER {
-        PostMessageA(hwnd, userdata(hwnd), wparam, lparam);
-        return 0;
+    match msg {
+        WM_USER => {
+            // Forward the message to the main event loop.
+            PostMessageA(hwnd, userdata(hwnd).msg_tray, wparam, lparam);
+        }
+        msg if msg == RegisterWindowMessageA("TaskbarCreated\0".as_ptr()) => {
+            // Re-add the tray icon if explorer.exe has restarted.
+            add_tray_icon(hwnd);
+        }
+        msg => return DefWindowProcA(hwnd, msg, wparam, lparam),
     }
-    DefWindowProcA(hwnd, msg, wparam, lparam)
+    0
+}
+
+fn add_tray_icon(hwnd: HWND) {
+    let mut notification_data = notification_data(hwnd);
+    notification_data.uFlags = NIF_MESSAGE | NIF_ICON;
+    notification_data.uCallbackMessage = WM_USER;
+    notification_data.hIcon = userdata(hwnd).icon;
+    unsafe { Shell_NotifyIconA(NIM_ADD, &mut notification_data) };
 }
 
 fn notification_data(hwnd: HWND) -> NOTIFYICONDATAA {
@@ -93,11 +112,13 @@ fn notification_data(hwnd: HWND) -> NOTIFYICONDATAA {
         let mut notification_data: NOTIFYICONDATAA = mem::zeroed();
         notification_data.cbSize = mem::size_of_val(&notification_data) as _;
         notification_data.hWnd = hwnd;
-        notification_data.uID = userdata(hwnd);
         notification_data
     }
 }
 
-fn userdata(hwnd: HWND) -> u32 {
-    unsafe { GetWindowLongPtrA(hwnd, GWLP_USERDATA) as _ }
+fn userdata(hwnd: HWND) -> &'static mut UserData {
+    unsafe {
+        let userdata = GetWindowLongPtrA(hwnd, GWLP_USERDATA) as *mut UserData;
+        &mut *userdata
+    }
 }
