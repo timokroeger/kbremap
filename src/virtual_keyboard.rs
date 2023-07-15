@@ -92,7 +92,10 @@ impl VirtualKeyboard {
         let layer_graph: LayerGraph = Graph::from_edges(edges);
 
         // Check for cycles and find the base layer.
-        let base_layer = algo::toposort(&layer_graph, None).expect("Cycle in layer graph")[0];
+        let base_layer = *algo::toposort(&layer_graph, None)
+            .expect("Cycle in layer graph")
+            .get(0)
+            .unwrap_or(&NodeIndex::new(0));
 
         Self {
             layout,
