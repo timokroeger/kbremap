@@ -1,11 +1,14 @@
 use std::{mem, ptr};
 
 use widestring::{u16cstr, U16CStr, U16CString};
+use windows_sys::core::PCWSTR;
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Storage::FileSystem::*;
 use windows_sys::Win32::System::Console::*;
+use windows_sys::Win32::System::LibraryLoader::*;
 use windows_sys::Win32::System::Registry::*;
 use windows_sys::Win32::System::Threading::CreateMutexW;
+use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 pub struct AutoStartEntry {
     key: HKEY,
@@ -115,5 +118,88 @@ pub fn register_instance(name: &U16CStr) -> bool {
 
         CloseHandle(handle);
         false
+    }
+}
+
+pub struct MessageOnlyWindow(HWND);
+
+impl Drop for MessageOnlyWindow {
+    fn drop(&mut self) {
+        unsafe { DestroyWindow(self.0) };
+    }
+}
+
+impl MessageOnlyWindow {
+    pub fn new(class_name: PCWSTR) -> Self {
+        unsafe {
+            let hwnd = CreateWindowExW(
+                0,
+                class_name,
+                ptr::null(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                HWND_MESSAGE,
+                0,
+                0,
+                ptr::null(),
+            );
+            assert_ne!(hwnd, 0);
+            Self(hwnd)
+        }
+    }
+
+    pub fn handle(&self) -> HWND {
+        self.0
+    }
+}
+
+pub fn icon_from_rc_numeric(id: u16) -> HICON {
+    let hicon = unsafe { LoadImageW(GetModuleHandleW(ptr::null()), id as _, IMAGE_ICON, 0, 0, 0) };
+    assert_ne!(hicon, 0, "icon resource {} not found", id);
+    hicon
+}
+
+pub fn popupmenu_from_rc_numeric(id: u16) -> HMENU {
+    unsafe {
+        let menu = LoadMenuA(GetModuleHandleA(ptr::null()), id as _);
+        assert_ne!(menu, 0, "menu resource {} not found", id);
+        let submenu = GetSubMenu(menu, 0);
+        assert_ne!(
+            submenu, 0,
+            "menu resource {} requires a popup submenu item",
+            id
+        );
+        submenu
+    }
+}
+
+pub fn create_dummy_window() -> MessageOnlyWindow {
+    let class_name = u16cstr!("dummy").as_ptr();
+    unsafe {
+        let mut wnd_class: WNDCLASSW = mem::zeroed();
+        wnd_class.lpfnWndProc = Some(DefWindowProcW);
+        wnd_class.lpszClassName = class_name;
+        RegisterClassW(&wnd_class);
+        MessageOnlyWindow::new(class_name)
+    }
+}
+
+pub fn message_loop(mut cb: impl FnMut(&MSG)) -> i32 {
+    unsafe {
+        let mut msg = mem::zeroed();
+        loop {
+            match GetMessageW(&mut msg, 0, 0, 0) {
+                1 => {
+                    cb(&msg);
+                    TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+                0 => return msg.wParam as _,
+                _ => unreachable!(),
+            }
+        }
     }
 }

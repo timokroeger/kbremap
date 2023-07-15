@@ -10,32 +10,27 @@ repository = "https://github.com/timokroeger/kbremap"
 [dependencies]
 anyhow = "1.0"
 encode_unicode = "1.0"
-native-windows-gui = { version = "1.0", features = [
-    "cursor",
-    "embed-resource",
-    "menu",
-    "message-window",
-    "no-styling",
-    "tray-notification",
-] }
 petgraph = { version = "0.6.0", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
-toml = "0.5.7"
+toml = "0.7.6"
 widestring = "1.0"
 windows-sys = { version = "0.48", features = [
     "Win32_Foundation",
+    "Win32_Graphics_Gdi",
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_Console",
+    "Win32_System_LibraryLoader",
     "Win32_System_Registry",
     "Win32_System_Threading",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
     "Win32_UI_TextServices",
     "Win32_UI_WindowsAndMessaging",
 ] }
 
 [build-dependencies]
-winres = "0.1.12"
+winresource = "0.1.15"
 
 # Size optimized build:
 # `cargo +nightly build --release -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target i686-pc-windows-msvc`

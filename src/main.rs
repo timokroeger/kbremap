@@ -5,8 +5,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::{env, fs};
+use std::{env, fs, ptr};
 
 mod resources;
 mod tray_icon;
@@ -17,11 +16,15 @@ use kbremap::config::Config;
 use kbremap::keyboard_hook::{self, KeyEvent, KeyType, KeyboardHook};
 use kbremap::layout::KeyAction;
 use kbremap::virtual_keyboard::VirtualKeyboard;
-use widestring::U16CString;
+use widestring::{u16cstr, U16CString};
 use winapi_util::register_instance;
+use windows_sys::Win32::Foundation::*;
+use windows_sys::Win32::System::Console::*;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
+use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::tray_icon::TrayIcon;
+use crate::winapi_util::AutoStartEntry;
 
 fn config_path(config_file: &OsStr) -> Result<PathBuf> {
     let mut path_buf;
@@ -46,7 +49,6 @@ fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
     let mut console_available = false;
     unsafe {
-        use windows_sys::Win32::System::Console::*;
         if AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
             console_available = true;
             winapi_util::disable_quick_edit_mode();
@@ -73,18 +75,7 @@ fn main() -> Result<()> {
     let layout = config.to_layout();
     let mut kb = VirtualKeyboard::new(layout);
 
-    native_windows_gui::init()?;
-    let ui = Rc::new(TrayIcon::new(console_available, &kb)?);
-
-    // Use a weak pointer to prevent a cyclic reference between the UI and the
-    // hook callback.
-    let ui_hook = Rc::downgrade(&ui);
-
-    let kbhook = KeyboardHook::set(move |mut key_event| {
-        // The UI must not be invalidated before unregistering the hook.
-        // We can unwrap here because we tranfer ownership of the hook to the UI.
-        let ui = ui_hook.upgrade().unwrap();
-
+    let mut kbhook = KeyboardHook::set(move |mut key_event| {
         let remap = if key_event.up {
             kb.release_key(key_event.scan_code)
         } else {
@@ -109,8 +100,8 @@ fn main() -> Result<()> {
             }
         }
 
-        ui.set_active_layer(kb.active_layer());
-        ui.set_locked_layer(kb.locked_layer());
+        //ui.set_active_layer(kb.active_layer());
+        //ui.set_locked_layer(kb.locked_layer());
 
         let Some(remap) = remap else {
             println!("{} forwarded", key_event);
@@ -140,10 +131,117 @@ fn main() -> Result<()> {
         true
     });
 
-    ui.set_hook(kbhook);
-
+    // UI code
     // The event loop is also required for the low-level keyboard hook to work.
-    native_windows_gui::dispatch_thread_events();
+
+    // Load resources
+    let icon_enabled = winapi_util::icon_from_rc_numeric(resources::ICON_KEYBOARD);
+    let icon_disabled = winapi_util::icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
+    let menu = winapi_util::popupmenu_from_rc_numeric(resources::MENU);
+
+    const WM_APP_TRAYICON: u32 = WM_APP + 873;
+    let tray_icon = TrayIcon::new(WM_APP_TRAYICON);
+    tray_icon.set_icon(icon_enabled);
+
+    let cmd = env::current_exe().unwrap();
+    let autostart = AutoStartEntry::new(
+        u16cstr!("kbremap").into(),
+        U16CString::from_os_str(cmd).unwrap(),
+    );
+
+    // Disable the debug output entry if the tool runs from command line.
+    if console_available {
+        unsafe { EnableMenuItem(menu, resources::MENU_DEBUG.into(), MF_DISABLED) };
+    }
+
+    let toggle_enabled = |kbhook: &mut KeyboardHook| {
+        if kbhook.active() {
+            kbhook.disable();
+            tray_icon.set_icon(icon_disabled);
+        } else {
+            kbhook.enable();
+            tray_icon.set_icon(icon_enabled);
+        }
+    };
+
+    // A dummy window handle is required to show a menu.
+    let dummy_window = winapi_util::create_dummy_window();
+
+    // Event loop required for the low-level keyboard hook and the tray icon.
+    winapi_util::message_loop(|msg| match (msg.message, msg.lParam as _) {
+        (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => {
+            toggle_enabled(&mut kbhook);
+        }
+        (WM_APP_TRAYICON, WM_RBUTTONUP) => unsafe {
+            // Refresh menu state
+            CheckMenuItem(
+                menu,
+                resources::MENU_DISABLE.into(),
+                if kbhook.active() {
+                    MF_UNCHECKED
+                } else {
+                    MF_CHECKED
+                },
+            );
+
+            AttachConsole(ATTACH_PARENT_PROCESS);
+            CheckMenuItem(
+                menu,
+                resources::MENU_DEBUG.into(),
+                if GetLastError() == ERROR_INVALID_HANDLE {
+                    MF_UNCHECKED
+                } else {
+                    MF_CHECKED
+                },
+            );
+
+            CheckMenuItem(
+                menu,
+                resources::MENU_STARTUP.into(),
+                if autostart.is_registered() {
+                    MF_CHECKED
+                    } else {
+                        MF_UNCHECKED
+                },
+            );
+
+            SetForegroundWindow(dummy_window.handle());
+            let menu_selection = TrackPopupMenuEx(
+                menu,
+                TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
+                msg.pt.x,
+                msg.pt.y,
+                dummy_window.handle(),
+                ptr::null(),
+            );
+            match menu_selection as u16 {
+                resources::MENU_EXIT => PostQuitMessage(0),
+                resources::MENU_DISABLE => toggle_enabled(&mut kbhook),
+                resources::MENU_DEBUG => {
+                    // Toggle console window to display debug logs.
+                    AttachConsole(ATTACH_PARENT_PROCESS);
+                    if GetLastError() == ERROR_INVALID_HANDLE {
+                        AllocConsole();
+                        winapi_util::disable_quick_edit_mode();
+                        let console = GetConsoleWindow();
+                        let console_menu = GetSystemMenu(console, 0);
+                        DeleteMenu(console_menu, SC_CLOSE as _, MF_BYCOMMAND);
+                    } else {
+                        FreeConsole();
+                    }
+                }
+                resources::MENU_STARTUP => {
+                    if autostart.is_registered() {
+                        autostart.remove();
+                    } else {
+                        autostart.register();
+                    }
+                }
+                _ => {}
+            }
+        },
+        _ => (),
+    });
 
     Ok(())
 }
