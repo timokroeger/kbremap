@@ -1,6 +1,13 @@
 # Changelog
 
-## [Unreleased]
+## [1.6.0] - 2023-07-19
+
+- Allow configurations with only one layer
+- Fix tray icon disappearing when `explorer.exe` restarts
+- Use `windows-sys` crate to build the tray icon menu without any additional abstractions.
+- Remove notifications on layer lock (it annoyed me over time).
+- Remove tooltip with current layer (never used it).
+- Disable any layer locks when re-enabling via double tray icon click or context menu.
 
 ## [1.5.1] - 2023-04-15
 

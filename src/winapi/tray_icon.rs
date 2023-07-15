@@ -104,7 +104,7 @@ fn add_tray_icon(hwnd: HWND) {
     notification_data.uFlags = NIF_MESSAGE | NIF_ICON;
     notification_data.uCallbackMessage = WM_USER;
     notification_data.hIcon = userdata(hwnd).icon;
-    unsafe { Shell_NotifyIconA(NIM_ADD, &mut notification_data) };
+    unsafe { Shell_NotifyIconA(NIM_ADD, &notification_data) };
 }
 
 fn notification_data(hwnd: HWND) -> NOTIFYICONDATAA {
