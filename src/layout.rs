@@ -133,7 +133,7 @@ pub struct Modifier {
     pub layer_to: u8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Layout {
     keys: Vec<Key>,
     layer_names: Vec<String>,

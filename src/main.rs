@@ -14,7 +14,7 @@ mod winapi_util;
 use anyhow::{anyhow, Context, Result};
 use kbremap::config::Config;
 use kbremap::keyboard_hook::{self, KeyEvent, KeyType, KeyboardHook};
-use kbremap::layout::KeyAction;
+use kbremap::layout::{KeyAction, Layout};
 use kbremap::virtual_keyboard::VirtualKeyboard;
 use widestring::{u16cstr, U16CString};
 use winapi_util::register_instance;
@@ -45,37 +45,10 @@ fn config_path(config_file: &OsStr) -> Result<PathBuf> {
     ))
 }
 
-fn main() -> Result<()> {
-    // Display debug and panic output when launched from a terminal.
-    let mut console_available = false;
-    unsafe {
-        if AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
-            console_available = true;
-            winapi_util::disable_quick_edit_mode();
-        }
-    };
-
-    let config_file = env::args_os()
-        .nth(1)
-        .unwrap_or_else(|| "config.toml".into());
-    let config_file = config_path(&config_file)?;
-
-    // Prevent duplicate instances if windows re-runs autostarts when rebooting after OS updates.
-    let mut hasher = DefaultHasher::new();
-    env::current_exe()?.hash(&mut hasher);
-    config_file.hash(&mut hasher);
-    let instance_key = U16CString::from_str(format!("kbremap-{:016x}", hasher.finish())).unwrap();
-    if !register_instance(instance_key.as_ucstr()) {
-        return Err(anyhow!("already running with the same configuration"));
-    }
-
-    let config_str = fs::read_to_string(config_file)?;
-    let config = Config::from_toml(&config_str)?;
-
-    let layout = config.to_layout();
-    let mut kb = VirtualKeyboard::new(layout);
-
-    let mut kbhook = KeyboardHook::set(move |mut key_event| {
+fn register_keyboard_hook(layout: &Layout, config: &Config) -> KeyboardHook {
+    let mut kb = VirtualKeyboard::new(layout.clone());
+    let config_caps_lock_layer = config.caps_lock_layer().map(String::from);
+    KeyboardHook::set(move |mut key_event| {
         let remap = if key_event.up {
             kb.release_key(key_event.scan_code)
         } else {
@@ -84,7 +57,7 @@ fn main() -> Result<()> {
 
         // Special caps lock handling:
         // Make sure the caps lock state stays in sync with the configured layer.
-        if let Some(caps_lock_layer) = config.caps_lock_layer() {
+        if let Some(caps_lock_layer) = &config_caps_lock_layer {
             if (kb.locked_layer() == caps_lock_layer) != keyboard_hook::caps_lock_enabled() {
                 keyboard_hook::send_key(KeyEvent {
                     up: false,
@@ -129,7 +102,38 @@ fn main() -> Result<()> {
             }
         }
         true
-    });
+    })
+}
+
+fn main() -> Result<()> {
+    // Display debug and panic output when launched from a terminal.
+    let mut console_available = false;
+    unsafe {
+        if AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
+            console_available = true;
+            winapi_util::disable_quick_edit_mode();
+        }
+    };
+
+    let config_file = env::args_os()
+        .nth(1)
+        .unwrap_or_else(|| "config.toml".into());
+    let config_file = config_path(&config_file)?;
+
+    // Prevent duplicate instances if windows re-runs autostarts when rebooting after OS updates.
+    let mut hasher = DefaultHasher::new();
+    env::current_exe()?.hash(&mut hasher);
+    config_file.hash(&mut hasher);
+    let instance_key = U16CString::from_str(format!("kbremap-{:016x}", hasher.finish())).unwrap();
+    if !register_instance(instance_key.as_ucstr()) {
+        return Err(anyhow!("already running with the same configuration"));
+    }
+
+    let config_str = fs::read_to_string(config_file)?;
+    let config = Config::from_toml(&config_str)?;
+    let layout = config.to_layout();
+
+    let mut kbhook = Some(register_keyboard_hook(&layout, &config));
 
     // UI code
     // The event loop is also required for the low-level keyboard hook to work.
@@ -153,27 +157,25 @@ fn main() -> Result<()> {
         unsafe { EnableMenuItem(menu, resources::MENU_DEBUG.into(), MF_DISABLED) };
     }
 
-    let toggle_enabled = |kbhook: &mut KeyboardHook| {
-        if kbhook.active() {
-            kbhook.disable();
+    let toggle_enabled = |kbhook: &mut Option<KeyboardHook>| {
+        if kbhook.is_some() {
+            *kbhook = None;
             tray_icon.set_icon(icon_disabled);
         } else {
-            kbhook.enable();
+            *kbhook = Some(register_keyboard_hook(&layout, &config));
             tray_icon.set_icon(icon_enabled);
         }
     };
 
     // Event loop required for the low-level keyboard hook and the tray icon.
     winapi_util::message_loop(|msg| match (msg.message, msg.lParam as _) {
-        (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => {
-            toggle_enabled(&mut kbhook);
-        }
+        (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => toggle_enabled(&mut kbhook),
         (WM_APP_TRAYICON, WM_RBUTTONUP) => unsafe {
             // Refresh menu state
             CheckMenuItem(
                 menu,
                 resources::MENU_DISABLE.into(),
-                if kbhook.active() {
+                if kbhook.is_some() {
                     MF_UNCHECKED
                 } else {
                     MF_CHECKED
