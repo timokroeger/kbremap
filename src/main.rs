@@ -18,8 +18,8 @@ use kbremap::keyboard_hook::{self, KeyEvent, KeyType, KeyboardHook};
 use kbremap::layout::KeyAction;
 use kbremap::virtual_keyboard::VirtualKeyboard;
 use widestring::U16CString;
-use winapi::um::winuser::*;
-use winapi_util::register_instance; // Virtual key constants VK_*
+use winapi_util::register_instance;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 
 use crate::tray_icon::TrayIcon;
 
@@ -46,7 +46,7 @@ fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
     let mut console_available = false;
     unsafe {
-        use winapi::um::wincon::*;
+        use windows_sys::Win32::System::Console::*;
         if AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
             console_available = true;
             winapi_util::disable_quick_edit_mode();

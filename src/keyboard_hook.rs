@@ -5,10 +5,9 @@ use std::fmt::Display;
 use std::{mem, ptr};
 
 use encode_unicode::CharExt;
-use winapi::ctypes::*;
-use winapi::shared::minwindef::*;
-use winapi::shared::windef::*;
-use winapi::um::winuser::*;
+use windows_sys::Win32::Foundation::*;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
+use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 type HookFn = dyn FnMut(KeyEvent) -> bool;
 
@@ -42,9 +41,7 @@ impl KeyboardHook {
 
             state.set(Some(Box::new(callback)));
 
-            let mut this = KeyboardHook {
-                handle: ptr::null_mut(),
-            };
+            let mut this = KeyboardHook { handle: 0 };
             this.enable();
             this
         })
@@ -52,21 +49,20 @@ impl KeyboardHook {
 
     pub fn enable(&mut self) {
         unsafe {
-            self.handle = SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), ptr::null_mut(), 0)
-                .as_mut()
-                .expect("Failed to install low-level keyboard hook.");
+            self.handle = SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), 0, 0);
+            assert_ne!(self.handle, 0, "Failed to install low-level keyboard hook.");
         }
     }
 
     pub fn disable(&mut self) {
         unsafe {
             assert!(UnhookWindowsHookEx(self.handle) == TRUE);
-            self.handle = ptr::null_mut();
+            self.handle = 0;
         };
     }
 
     pub fn active(&self) -> bool {
-        !self.handle.is_null()
+        self.handle != 0
     }
 }
 
@@ -141,9 +137,9 @@ impl KeyEvent {
 }
 
 /// The actual WinAPI compatible callback.
-unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code != HC_ACTION {
-        return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
+unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code != HC_ACTION as i32 {
+        return CallNextHookEx(0, code, wparam, lparam);
     }
 
     let hook_lparam = &*(lparam as *const KBDLLHOOKSTRUCT);
@@ -154,7 +150,7 @@ unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM)
     // to prevent recursion and potential stack overflows if our remapping logic
     // sent the injected event.
     if injected {
-        return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
+        return CallNextHookEx(0, code, wparam, lparam);
     }
 
     let mut handled = false;
@@ -183,7 +179,7 @@ unsafe extern "system" fn hook_proc(code: c_int, wparam: WPARAM, lparam: LPARAM)
     if handled {
         -1
     } else {
-        CallNextHookEx(ptr::null_mut(), code, wparam, lparam)
+        CallNextHookEx(0, code, wparam, lparam)
     }
 }
 
@@ -194,8 +190,8 @@ pub fn send_key(key: KeyEvent) {
 
         let n_inputs = match key.key {
             KeyType::VirtualKey(vk) => {
-                inputs[0].type_ = INPUT_KEYBOARD;
-                *inputs[0].u.ki_mut() = key_input_from_event(key, vk.into());
+                inputs[0].r#type = INPUT_KEYBOARD;
+                inputs[0].Anonymous.ki = key_input_from_event(key, vk.into());
                 1
             }
             KeyType::Unicode(c) => {
@@ -208,8 +204,8 @@ pub fn send_key(key: KeyEvent) {
                         let mut kb_input: KEYBDINPUT = key_input_from_event(key, 0);
                         kb_input.wScan = c;
                         kb_input.dwFlags |= KEYEVENTF_UNICODE;
-                        input.type_ = INPUT_KEYBOARD;
-                        *input.u.ki_mut() = kb_input;
+                        input.r#type = INPUT_KEYBOARD;
+                        input.Anonymous.ki = kb_input;
                     })
                     .count()
             }
@@ -246,7 +242,7 @@ pub fn get_virtual_key(c: char) -> Option<u8> {
         // console applications: https://github.com/microsoft/terminal/issues/83
         // Fall back to the layout used by our process which is hopefully the
         // correct one for the console too.
-        if layout.is_null() {
+        if layout == 0 {
             layout = GetKeyboardLayout(0);
         }
         let vk_state = VkKeyScanExW(c.to_utf16()[0], layout);
@@ -263,7 +259,7 @@ pub fn get_virtual_key(c: char) -> Option<u8> {
         }
 
         // Check if the modifier keys, which are required to type the character, are pressed.
-        let modifier_pressed = |vk| (GetKeyState(vk) as u16) & 0x8000 != 0;
+        let modifier_pressed = |vk: u16| (GetKeyState(vk.into()) as u16) & 0x8000 != 0;
 
         let shift = vk_state & 0x100 != 0;
         if shift && (modifier_pressed(VK_SHIFT) == caps_lock_enabled()) {
@@ -287,5 +283,5 @@ pub fn get_virtual_key(c: char) -> Option<u8> {
 }
 
 pub fn caps_lock_enabled() -> bool {
-    unsafe { (GetKeyState(VK_CAPITAL) as u16) & 0x0001 != 0 }
+    unsafe { (GetKeyState(VK_CAPITAL.into()) as u16) & 0x0001 != 0 }
 }

@@ -1,16 +1,11 @@
 use std::{mem, ptr};
 
 use widestring::{u16cstr, U16CStr, U16CString};
-use winapi::shared::minwindef::*;
-use winapi::shared::winerror::*;
-use winapi::um::consoleapi::*;
-use winapi::um::errhandlingapi::*;
-use winapi::um::fileapi::*;
-use winapi::um::handleapi::*;
-use winapi::um::synchapi::*;
-use winapi::um::wincon::*;
-use winapi::um::winnt::*;
-use winapi::um::winreg::*;
+use windows_sys::Win32::Foundation::*;
+use windows_sys::Win32::Storage::FileSystem::*;
+use windows_sys::Win32::System::Console::*;
+use windows_sys::Win32::System::Registry::*;
+use windows_sys::Win32::System::Threading::CreateMutexW;
 
 pub struct AutoStartEntry {
     key: HKEY,
@@ -41,7 +36,7 @@ impl AutoStartEntry {
 
     pub fn is_registered(&self) -> bool {
         unsafe {
-            let mut path_buf = [0_u16; MAX_PATH];
+            let mut path_buf = [0_u16; MAX_PATH as usize];
             let mut path_len = mem::size_of_val(&path_buf) as u32;
             let key_exists = RegGetValueW(
                 self.key,
@@ -91,10 +86,10 @@ pub fn disable_quick_edit_mode() {
             "CONIN$\0".as_ptr() as _,
             GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
-            ptr::null_mut(),
+            ptr::null(),
             OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL,
-            ptr::null_mut(),
+            0,
         );
         let mut mode: u32 = 0;
         if GetConsoleMode(console as _, &mut mode) != 0 {
@@ -109,8 +104,8 @@ pub fn disable_quick_edit_mode() {
 // Returns true when this process is the first instance with the given name.
 pub fn register_instance(name: &U16CStr) -> bool {
     unsafe {
-        let handle = CreateMutexW(ptr::null_mut(), 0, name.as_ptr());
-        assert!(!handle.is_null());
+        let handle = CreateMutexW(ptr::null(), 0, name.as_ptr());
+        assert_ne!(handle, 0);
 
         if GetLastError() != ERROR_ALREADY_EXISTS {
             // Intentionally leak the mutex object to protect this instance

@@ -9,9 +9,8 @@ use native_windows_gui::{
     NwgError, RawEventHandler, TrayNotification,
 };
 use widestring::{u16cstr, U16CString};
-use winapi::um::consoleapi::*;
-use winapi::um::wincon::*;
-use winapi::um::winuser::*;
+use windows_sys::Win32::System::Console::*;
+use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::resources;
 use crate::winapi_util::{self, AutoStartEntry};
@@ -223,7 +222,6 @@ impl TrayIcon {
                 return None;
             }
 
-            use winapi::um::winuser::*;
             match lparam as _ {
                 WM_LBUTTONDBLCLK => data.toggle_disable(),
                 WM_RBUTTONUP => {
