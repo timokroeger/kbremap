@@ -1,7 +1,6 @@
 use std::{mem, ptr};
 
 use widestring::{u16cstr, U16CStr, U16CString};
-use windows_sys::core::PCWSTR;
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Storage::FileSystem::*;
 use windows_sys::Win32::System::Console::*;
@@ -121,41 +120,6 @@ pub fn register_instance(name: &U16CStr) -> bool {
     }
 }
 
-pub struct MessageOnlyWindow(HWND);
-
-impl Drop for MessageOnlyWindow {
-    fn drop(&mut self) {
-        unsafe { DestroyWindow(self.0) };
-    }
-}
-
-impl MessageOnlyWindow {
-    pub fn new(class_name: PCWSTR) -> Self {
-        unsafe {
-            let hwnd = CreateWindowExW(
-                0,
-                class_name,
-                ptr::null(),
-                0,
-                0,
-                0,
-                0,
-                0,
-                HWND_MESSAGE,
-                0,
-                0,
-                ptr::null(),
-            );
-            assert_ne!(hwnd, 0);
-            Self(hwnd)
-        }
-    }
-
-    pub fn handle(&self) -> HWND {
-        self.0
-    }
-}
-
 pub fn icon_from_rc_numeric(id: u16) -> HICON {
     let hicon = unsafe { LoadImageW(GetModuleHandleW(ptr::null()), id as _, IMAGE_ICON, 0, 0, 0) };
     assert_ne!(hicon, 0, "icon resource {} not found", id);
@@ -173,17 +137,6 @@ pub fn popupmenu_from_rc_numeric(id: u16) -> HMENU {
             id
         );
         submenu
-    }
-}
-
-pub fn create_dummy_window() -> MessageOnlyWindow {
-    let class_name = u16cstr!("dummy").as_ptr();
-    unsafe {
-        let mut wnd_class: WNDCLASSW = mem::zeroed();
-        wnd_class.lpfnWndProc = Some(DefWindowProcW);
-        wnd_class.lpszClassName = class_name;
-        RegisterClassW(&wnd_class);
-        MessageOnlyWindow::new(class_name)
     }
 }
 

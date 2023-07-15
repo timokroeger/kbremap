@@ -164,9 +164,6 @@ fn main() -> Result<()> {
         }
     };
 
-    // A dummy window handle is required to show a menu.
-    let dummy_window = winapi_util::create_dummy_window();
-
     // Event loop required for the low-level keyboard hook and the tray icon.
     winapi_util::message_loop(|msg| match (msg.message, msg.lParam as _) {
         (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => {
@@ -205,13 +202,14 @@ fn main() -> Result<()> {
                 },
             );
 
-            SetForegroundWindow(dummy_window.handle());
+            // Required for the menu to disappear when it loses focus.
+            SetForegroundWindow(msg.hwnd);
             let menu_selection = TrackPopupMenuEx(
                 menu,
                 TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
                 msg.pt.x,
                 msg.pt.y,
-                dummy_window.handle(),
+                msg.hwnd,
                 ptr::null(),
             );
             match menu_selection as u16 {

@@ -1,24 +1,19 @@
 use std::{mem, ptr};
 
-use widestring::u16cstr;
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::System::LibraryLoader::*;
 use windows_sys::Win32::UI::Shell::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-use crate::winapi_util::MessageOnlyWindow;
-
 pub struct TrayIcon {
-    window: MessageOnlyWindow,
+    hwnd: HWND,
 }
 
 impl Drop for TrayIcon {
     fn drop(&mut self) {
         unsafe {
-            Shell_NotifyIconW(
-                NIM_DELETE,
-                &mut Self::notification_data(self.window.handle()),
-            );
+            Shell_NotifyIconA(NIM_DELETE, &notification_data(self.hwnd));
+            DestroyWindow(self.hwnd);
         }
     }
 }
@@ -30,68 +25,79 @@ impl TrayIcon {
             "message must be in the WM_APP range"
         );
 
-        let class_name = u16cstr!("trayicon").as_ptr();
+        let class_name = "trayicon\0".as_ptr();
         unsafe {
-            let hinstance = GetModuleHandleW(ptr::null());
+            let hinstance = GetModuleHandleA(ptr::null());
 
             // A class is unique and the `RegisterClass()` function fails when
             // we create more than one tray icon but we do not care.
-            let mut wnd_class: WNDCLASSW = mem::zeroed();
-            wnd_class.lpfnWndProc = Some(Self::wndproc);
+            let mut wnd_class: WNDCLASSA = mem::zeroed();
+            wnd_class.lpfnWndProc = Some(wndproc);
             wnd_class.hInstance = hinstance;
             wnd_class.lpszClassName = class_name;
-            RegisterClassW(&wnd_class);
-        }
+            RegisterClassA(&wnd_class);
 
-        let window = MessageOnlyWindow::new(class_name);
-        unsafe {
+            // Never visible, only required to receive messages.
+            // It cannot be a message-only `HWND_MESSAGE` thought because those do not
+            // receive global messages like "TaskbarCreated".
+            let hwnd = CreateWindowExA(
+                0,
+                class_name,
+                ptr::null(),
+                WS_POPUP, // Not visible anyway, might use less resources.
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                ptr::null(),
+            );
+            assert_ne!(hwnd, 0);
+
             // Set message as associated data
-            SetWindowLongPtrW(window.handle(), GWLP_USERDATA, message as isize);
+            SetWindowLongPtrA(hwnd, GWLP_USERDATA, message as isize);
 
             // Create the tray icon
-            let mut notification_data = Self::notification_data(window.handle());
+            let mut notification_data = notification_data(hwnd);
             notification_data.uFlags = NIF_MESSAGE;
             notification_data.uCallbackMessage = WM_USER;
-            Shell_NotifyIconW(NIM_ADD, &mut notification_data);
+            Shell_NotifyIconA(NIM_ADD, &mut notification_data);
 
-            Self { window }
+            Self { hwnd }
         }
     }
 
     pub fn set_icon(&self, icon: HICON) {
-        let mut notification_data = Self::notification_data(self.window.handle());
+        let mut notification_data = notification_data(self.hwnd);
         notification_data.uFlags = NIF_ICON;
         notification_data.hIcon = icon;
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &mut notification_data);
+            Shell_NotifyIconA(NIM_MODIFY, &notification_data);
         }
     }
+}
 
-    fn notification_data(hwnd: HWND) -> NOTIFYICONDATAW {
-        unsafe {
-            let mut notification_data: NOTIFYICONDATAW = mem::zeroed();
-            notification_data.cbSize = mem::size_of_val(&notification_data) as _;
-            notification_data.hWnd = hwnd;
-            notification_data.uID = Self::message(hwnd);
-            notification_data
-        }
+// Forward the message to the main event loop.
+unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if msg == WM_USER {
+        PostMessageA(hwnd, userdata(hwnd), wparam, lparam);
+        return 0;
     }
+    DefWindowProcA(hwnd, msg, wparam, lparam)
+}
 
-    fn message(hwnd: HWND) -> u32 {
-        unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) as _ }
+fn notification_data(hwnd: HWND) -> NOTIFYICONDATAA {
+    unsafe {
+        let mut notification_data: NOTIFYICONDATAA = mem::zeroed();
+        notification_data.cbSize = mem::size_of_val(&notification_data) as _;
+        notification_data.hWnd = hwnd;
+        notification_data.uID = userdata(hwnd);
+        notification_data
     }
+}
 
-    // Forward the message to the main event loop.
-    unsafe extern "system" fn wndproc(
-        hwnd: HWND,
-        msg: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        if msg == WM_USER {
-            PostMessageW(0, Self::message(hwnd), wparam, lparam);
-            return 0;
-        }
-        DefWindowProcW(hwnd, msg, wparam, lparam)
-    }
+fn userdata(hwnd: HWND) -> u32 {
+    unsafe { GetWindowLongPtrA(hwnd, GWLP_USERDATA) as _ }
 }
