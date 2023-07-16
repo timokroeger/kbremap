@@ -18,8 +18,6 @@ use kbremap::layout::{KeyAction, Layout};
 use kbremap::virtual_keyboard::VirtualKeyboard;
 use widestring::{u16cstr, U16CString};
 use winapi_util::register_instance;
-use windows_sys::Win32::Foundation::*;
-use windows_sys::Win32::System::Console::*;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -107,13 +105,8 @@ fn register_keyboard_hook(layout: &Layout, config: &Config) -> KeyboardHook {
 
 fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
-    let mut console_available = false;
-    unsafe {
-        if AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
-            console_available = true;
-            winapi_util::disable_quick_edit_mode();
-        }
-    };
+    // Not only checks if we are running from a terminal but also attaches to it.
+    let console_available = winapi_util::console_check();
 
     let config_file = env::args_os()
         .nth(1)
@@ -181,18 +174,15 @@ fn main() -> Result<()> {
                     MF_CHECKED
                 },
             );
-
-            AttachConsole(ATTACH_PARENT_PROCESS);
             CheckMenuItem(
                 menu,
                 resources::MENU_DEBUG.into(),
-                if GetLastError() == ERROR_INVALID_HANDLE {
-                    MF_UNCHECKED
-                } else {
+                if winapi_util::console_check() {
                     MF_CHECKED
+                } else {
+                    MF_UNCHECKED
                 },
             );
-
             CheckMenuItem(
                 menu,
                 resources::MENU_STARTUP.into(),
@@ -218,15 +208,10 @@ fn main() -> Result<()> {
                 resources::MENU_DISABLE => toggle_enabled(&mut kbhook),
                 resources::MENU_DEBUG => {
                     // Toggle console window to display debug logs.
-                    AttachConsole(ATTACH_PARENT_PROCESS);
-                    if GetLastError() == ERROR_INVALID_HANDLE {
-                        AllocConsole();
-                        winapi_util::disable_quick_edit_mode();
-                        let console = GetConsoleWindow();
-                        let console_menu = GetSystemMenu(console, 0);
-                        DeleteMenu(console_menu, SC_CLOSE as _, MF_BYCOMMAND);
+                    if winapi_util::console_check() {
+                        winapi_util::console_close()
                     } else {
-                        FreeConsole();
+                        winapi_util::console_open()
                     }
                 }
                 resources::MENU_STARTUP => {
