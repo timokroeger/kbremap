@@ -5,7 +5,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::{env, fs, ptr};
+use std::{env, fs};
 
 mod resources;
 mod tray_icon;
@@ -129,13 +129,13 @@ fn main() -> Result<()> {
     let mut kbhook = Some(register_keyboard_hook(&layout, &config));
 
     // UI code
-    // The event loop is also required for the low-level keyboard hook to work.
 
     // Load resources
     let icon_enabled = winapi_util::icon_from_rc_numeric(resources::ICON_KEYBOARD);
     let icon_disabled = winapi_util::icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
     let menu = winapi_util::popupmenu_from_rc_numeric(resources::MENU);
 
+    // Arbitrary ID in the WM_APP range, used to identify which tray icon a message originates from.
     const WM_APP_TRAYICON: u32 = WM_APP + 873;
     let tray_icon = TrayIcon::new(WM_APP_TRAYICON, icon_enabled);
 
@@ -145,11 +145,12 @@ fn main() -> Result<()> {
         U16CString::from_os_str(cmd).unwrap(),
     );
 
-    // Disable the debug output entry if the tool runs from command line.
+    // Disable the "Show debug output" entry if the tool runs from command line.
     if console_available {
         unsafe { EnableMenuItem(menu, resources::MENU_DEBUG.into(), MF_DISABLED) };
     }
 
+    // Enabled state can be changed by double click to the tray icon or from the context menu.
     let toggle_enabled = |kbhook: &mut Option<KeyboardHook>| {
         if kbhook.is_some() {
             *kbhook = None;
@@ -160,51 +161,25 @@ fn main() -> Result<()> {
         }
     };
 
+    let check_menu_entry = |entry: u16, condition: bool| unsafe {
+        CheckMenuItem(
+            menu,
+            entry.into(),
+            if condition { MF_CHECKED } else { MF_UNCHECKED },
+        );
+    };
+
     // Event loop required for the low-level keyboard hook and the tray icon.
     winapi_util::message_loop(|msg| match (msg.message, msg.lParam as _) {
         (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => toggle_enabled(&mut kbhook),
-        (WM_APP_TRAYICON, WM_RBUTTONUP) => unsafe {
+        (WM_APP_TRAYICON, WM_RBUTTONUP) => {
             // Refresh menu state
-            CheckMenuItem(
-                menu,
-                resources::MENU_DISABLE.into(),
-                if kbhook.is_some() {
-                    MF_UNCHECKED
-                } else {
-                    MF_CHECKED
-                },
-            );
-            CheckMenuItem(
-                menu,
-                resources::MENU_DEBUG.into(),
-                if winapi_util::console_check() {
-                    MF_CHECKED
-                } else {
-                    MF_UNCHECKED
-                },
-            );
-            CheckMenuItem(
-                menu,
-                resources::MENU_STARTUP.into(),
-                if autostart.is_registered() {
-                    MF_CHECKED
-                } else {
-                    MF_UNCHECKED
-                },
-            );
+            check_menu_entry(resources::MENU_DISABLE, kbhook.is_none());
+            check_menu_entry(resources::MENU_DEBUG, winapi_util::console_check());
+            check_menu_entry(resources::MENU_STARTUP, autostart.is_registered());
 
-            // Required for the menu to disappear when it loses focus.
-            SetForegroundWindow(msg.hwnd);
-            let menu_selection = TrackPopupMenuEx(
-                menu,
-                TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
-                msg.pt.x,
-                msg.pt.y,
-                msg.hwnd,
-                ptr::null(),
-            );
-            match menu_selection as u16 {
-                resources::MENU_EXIT => PostQuitMessage(0),
+            match winapi_util::popup_menu(menu, msg) as u16 {
+                resources::MENU_EXIT => unsafe { PostQuitMessage(0) },
                 resources::MENU_DISABLE => toggle_enabled(&mut kbhook),
                 resources::MENU_DEBUG => {
                     // Toggle console window to display debug logs.
@@ -223,7 +198,7 @@ fn main() -> Result<()> {
                 }
                 _ => {}
             }
-        },
+        }
         _ => {}
     });
 

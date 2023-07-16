@@ -181,3 +181,18 @@ fn disable_quick_edit_mode() {
         CloseHandle(console);
     }
 }
+
+pub fn popup_menu(menu: HMENU, msg: &MSG) -> i32 {
+    unsafe {
+        // Required for the menu to disappear when it loses focus.
+        SetForegroundWindow(msg.hwnd);
+        TrackPopupMenuEx(
+            menu,
+            TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
+            msg.pt.x,
+            msg.pt.y,
+            msg.hwnd,
+            ptr::null(),
+        )
+    }
+}
