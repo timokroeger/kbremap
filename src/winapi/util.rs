@@ -1,17 +1,17 @@
+use std::ffi::CStr;
 use std::{mem, ptr};
 
-use widestring::U16CStr;
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Storage::FileSystem::*;
 use windows_sys::Win32::System::Console::*;
 use windows_sys::Win32::System::LibraryLoader::*;
-use windows_sys::Win32::System::Threading::CreateMutexW;
+use windows_sys::Win32::System::Threading::CreateMutexA;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 // Returns true when this process is the first instance with the given name.
-pub fn register_instance(name: &U16CStr) -> bool {
+pub fn register_instance(name: &CStr) -> bool {
     unsafe {
-        let handle = CreateMutexW(ptr::null(), 0, name.as_ptr());
+        let handle = CreateMutexA(ptr::null(), 0, name.as_ptr().cast());
         assert_ne!(handle, 0);
 
         if GetLastError() != ERROR_ALREADY_EXISTS {
@@ -26,7 +26,7 @@ pub fn register_instance(name: &U16CStr) -> bool {
 }
 
 pub fn icon_from_rc_numeric(id: u16) -> HICON {
-    let hicon = unsafe { LoadImageW(GetModuleHandleW(ptr::null()), id as _, IMAGE_ICON, 0, 0, 0) };
+    let hicon = unsafe { LoadImageA(GetModuleHandleA(ptr::null()), id as _, IMAGE_ICON, 0, 0, 0) };
     assert_ne!(hicon, 0, "icon resource {} not found", id);
     hicon
 }

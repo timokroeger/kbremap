@@ -41,7 +41,7 @@ impl KeyboardHook {
 
             state.set(Some(Box::new(callback)));
 
-            let handle = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), 0, 0) };
+            let handle = unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc), 0, 0) };
             assert_ne!(handle, 0, "Failed to install low-level keyboard hook.");
             KeyboardHook { handle }
         })

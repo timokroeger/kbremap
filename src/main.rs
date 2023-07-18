@@ -5,7 +5,7 @@ mod resources;
 mod winapi;
 
 use std::collections::hash_map::DefaultHasher;
-use std::ffi::OsStr;
+use std::ffi::{CString, OsStr};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -16,7 +16,6 @@ use kbremap::config::Config;
 use kbremap::keyboard_hook::{self, KeyEvent, KeyType, KeyboardHook};
 use kbremap::layout::{KeyAction, Layout};
 use kbremap::virtual_keyboard::VirtualKeyboard;
-use widestring::{u16cstr, U16CString};
 use winapi::{AutoStartEntry, PopupMenu, TrayIcon};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -114,8 +113,8 @@ fn main() -> Result<()> {
     let mut hasher = DefaultHasher::new();
     env::current_exe()?.hash(&mut hasher);
     config_file.hash(&mut hasher);
-    let instance_key = U16CString::from_str(format!("kbremap-{:016x}", hasher.finish())).unwrap();
-    if !winapi::register_instance(instance_key.as_ucstr()) {
+    let instance_key = CString::new(format!("kbremap-{:016x}", hasher.finish())).unwrap();
+    if !winapi::register_instance(&instance_key) {
         return Err(anyhow!("already running with the same configuration"));
     }
 
@@ -137,8 +136,8 @@ fn main() -> Result<()> {
 
     let cmd = env::current_exe().unwrap();
     let autostart = AutoStartEntry::new(
-        u16cstr!("kbremap").into(),
-        U16CString::from_os_str(cmd).unwrap(),
+        cstr!("kbremap").into(),
+        CString::new(cmd.to_str().unwrap()).unwrap(),
     );
 
     // Enabled state can be changed by double click to the tray icon or from the context menu.
