@@ -1,16 +1,14 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 #![cfg_attr(test, windows_subsystem = "console")]
 
+mod resources;
+mod winapi;
+
 use std::collections::hash_map::DefaultHasher;
-use std::ffi::{CStr, OsStr};
+use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
-
-mod popup_menu;
-mod resources;
-mod tray_icon;
-mod winapi_util;
 
 use anyhow::{anyhow, Context, Result};
 use cstr::cstr;
@@ -19,13 +17,9 @@ use kbremap::keyboard_hook::{self, KeyEvent, KeyType, KeyboardHook};
 use kbremap::layout::{KeyAction, Layout};
 use kbremap::virtual_keyboard::VirtualKeyboard;
 use widestring::{u16cstr, U16CString};
-use winapi_util::register_instance;
+use winapi::{AutoStartEntry, PopupMenu, TrayIcon};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
-
-use crate::popup_menu::PopupMenu;
-use crate::tray_icon::TrayIcon;
-use crate::winapi_util::AutoStartEntry;
 
 fn config_path(config_file: &OsStr) -> Result<PathBuf> {
     let mut path_buf;
@@ -109,7 +103,7 @@ fn register_keyboard_hook(layout: &Layout, config: &Config) -> KeyboardHook {
 fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
     // Not only checks if we are running from a terminal but also attaches to it.
-    let running_in_terminal = winapi_util::console_check();
+    let running_in_terminal = winapi::console_check();
 
     let config_file = env::args_os()
         .nth(1)
@@ -121,7 +115,7 @@ fn main() -> Result<()> {
     env::current_exe()?.hash(&mut hasher);
     config_file.hash(&mut hasher);
     let instance_key = U16CString::from_str(format!("kbremap-{:016x}", hasher.finish())).unwrap();
-    if !register_instance(instance_key.as_ucstr()) {
+    if !winapi::register_instance(instance_key.as_ucstr()) {
         return Err(anyhow!("already running with the same configuration"));
     }
 
@@ -134,8 +128,8 @@ fn main() -> Result<()> {
     // UI code
 
     // Load resources
-    let icon_enabled = winapi_util::icon_from_rc_numeric(resources::ICON_KEYBOARD);
-    let icon_disabled = winapi_util::icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
+    let icon_enabled = winapi::icon_from_rc_numeric(resources::ICON_KEYBOARD);
+    let icon_disabled = winapi::icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
 
     // Arbitrary ID in the WM_APP range, used to identify which tray icon a message originates from.
     const WM_APP_TRAYICON: u32 = WM_APP + 873;
@@ -159,7 +153,7 @@ fn main() -> Result<()> {
     };
 
     // Event loop required for the low-level keyboard hook and the tray icon.
-    winapi_util::message_loop(|msg| match (msg.message, msg.lParam as _) {
+    winapi::message_loop(|msg| match (msg.message, msg.lParam as _) {
         (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => toggle_enabled(&mut kbhook),
         (WM_APP_TRAYICON, WM_RBUTTONUP) => {
             const MENU_STARTUP: u32 = 1;
@@ -178,7 +172,7 @@ fn main() -> Result<()> {
             );
             menu.add_entry(
                 MENU_DEBUG,
-                flag_checked(winapi_util::console_check()) | flag_disabled(running_in_terminal),
+                flag_checked(winapi::console_check()) | flag_disabled(running_in_terminal),
                 cstr!("Show debug output"),
             );
             menu.add_entry(
@@ -198,10 +192,10 @@ fn main() -> Result<()> {
                 }
                 Some(MENU_DEBUG) => {
                     // Toggle console window to display debug logs.
-                    if winapi_util::console_check() {
-                        winapi_util::console_close()
+                    if winapi::console_check() {
+                        winapi::console_close()
                     } else {
-                        winapi_util::console_open()
+                        winapi::console_open()
                     }
                 }
                 Some(MENU_DISABLE) => toggle_enabled(&mut kbhook),
