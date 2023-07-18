@@ -4,8 +4,3 @@
 
 pub const ICON_KEYBOARD: u16 = 1;
 pub const ICON_KEYBOARD_DELETE: u16 = 2;
-pub const MENU: u16 = 10;
-pub const MENU_EXIT: u16 = 11;
-pub const MENU_DISABLE: u16 = 12;
-pub const MENU_DEBUG: u16 = 13;
-pub const MENU_STARTUP: u16 = 14;

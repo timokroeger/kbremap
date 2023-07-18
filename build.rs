@@ -24,17 +24,6 @@ const MANIFEST: &str = r#"<assembly xmlns="urn:schemas-microsoft-com:asm.v1" man
     </application>
 </assembly>"#;
 
-const RC_MENU: &str = r#"?MENU? MENU
-BEGIN
-    POPUP "trayicon"
-    BEGIN
-        MENUITEM "Run at system startup", ?MENU_STARTUP?
-        MENUITEM "Show debug output", ?MENU_DEBUG?
-        MENUITEM "Disable", ?MENU_DISABLE?
-        MENUITEM "Exit", ?MENU_EXIT?
-    END
-END"#;
-
 fn main() {
     // Update manifest with package name and version from Cargo.toml.
     let name = env::var("CARGO_PKG_NAME").unwrap();
@@ -55,13 +44,6 @@ fn main() {
     let manifest = manifest.replace('\n', "");
     let manifest = manifest.replace("    ", "");
 
-    let rc_menu = RC_MENU.to_string();
-    let rc_menu = rc_menu.replace("?MENU?", &resources::MENU.to_string());
-    let rc_menu = rc_menu.replace("?MENU_STARTUP?", &resources::MENU_STARTUP.to_string());
-    let rc_menu = rc_menu.replace("?MENU_DEBUG?", &resources::MENU_DEBUG.to_string());
-    let rc_menu = rc_menu.replace("?MENU_DISABLE?", &resources::MENU_DISABLE.to_string());
-    let rc_menu = rc_menu.replace("?MENU_EXIT?", &resources::MENU_EXIT.to_string());
-
     WindowsResource::new()
         .set_manifest(&manifest)
         .set_icon_with_id("icons/keyboard.ico", &format!("{}", ICON_KEYBOARD)) // icon for the .exe file
@@ -69,7 +51,6 @@ fn main() {
             "icons/keyboard_delete.ico",
             &format!("{}", ICON_KEYBOARD_DELETE),
         )
-        .append_rc_content(&rc_menu)
         .compile()
         .unwrap();
 }

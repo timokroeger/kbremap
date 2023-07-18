@@ -2,16 +2,18 @@
 #![cfg_attr(test, windows_subsystem = "console")]
 
 use std::collections::hash_map::DefaultHasher;
-use std::ffi::OsStr;
+use std::ffi::{CStr, OsStr};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
+mod popup_menu;
 mod resources;
 mod tray_icon;
 mod winapi_util;
 
 use anyhow::{anyhow, Context, Result};
+use cstr::cstr;
 use kbremap::config::Config;
 use kbremap::keyboard_hook::{self, KeyEvent, KeyType, KeyboardHook};
 use kbremap::layout::{KeyAction, Layout};
@@ -21,6 +23,7 @@ use winapi_util::register_instance;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
+use crate::popup_menu::PopupMenu;
 use crate::tray_icon::TrayIcon;
 use crate::winapi_util::AutoStartEntry;
 
@@ -106,7 +109,7 @@ fn register_keyboard_hook(layout: &Layout, config: &Config) -> KeyboardHook {
 fn main() -> Result<()> {
     // Display debug and panic output when launched from a terminal.
     // Not only checks if we are running from a terminal but also attaches to it.
-    let console_available = winapi_util::console_check();
+    let running_in_terminal = winapi_util::console_check();
 
     let config_file = env::args_os()
         .nth(1)
@@ -133,7 +136,6 @@ fn main() -> Result<()> {
     // Load resources
     let icon_enabled = winapi_util::icon_from_rc_numeric(resources::ICON_KEYBOARD);
     let icon_disabled = winapi_util::icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
-    let menu = winapi_util::popupmenu_from_rc_numeric(resources::MENU);
 
     // Arbitrary ID in the WM_APP range, used to identify which tray icon a message originates from.
     const WM_APP_TRAYICON: u32 = WM_APP + 873;
@@ -144,11 +146,6 @@ fn main() -> Result<()> {
         u16cstr!("kbremap").into(),
         U16CString::from_os_str(cmd).unwrap(),
     );
-
-    // Disable the "Show debug output" entry if the tool runs from command line.
-    if console_available {
-        unsafe { EnableMenuItem(menu, resources::MENU_DEBUG.into(), MF_DISABLED) };
-    }
 
     // Enabled state can be changed by double click to the tray icon or from the context menu.
     let toggle_enabled = |kbhook: &mut Option<KeyboardHook>| {
@@ -161,27 +158,45 @@ fn main() -> Result<()> {
         }
     };
 
-    let check_menu_entry = |entry: u16, condition: bool| unsafe {
-        CheckMenuItem(
-            menu,
-            entry.into(),
-            if condition { MF_CHECKED } else { MF_UNCHECKED },
-        );
-    };
-
     // Event loop required for the low-level keyboard hook and the tray icon.
     winapi_util::message_loop(|msg| match (msg.message, msg.lParam as _) {
         (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => toggle_enabled(&mut kbhook),
         (WM_APP_TRAYICON, WM_RBUTTONUP) => {
-            // Refresh menu state
-            check_menu_entry(resources::MENU_DISABLE, kbhook.is_none());
-            check_menu_entry(resources::MENU_DEBUG, winapi_util::console_check());
-            check_menu_entry(resources::MENU_STARTUP, autostart.is_registered());
+            const MENU_STARTUP: u32 = 1;
+            const MENU_DEBUG: u32 = 2;
+            const MENU_DISABLE: u32 = 3;
+            const MENU_EXIT: u32 = 4;
 
-            match winapi_util::popup_menu(menu, msg) as u16 {
-                resources::MENU_EXIT => unsafe { PostQuitMessage(0) },
-                resources::MENU_DISABLE => toggle_enabled(&mut kbhook),
-                resources::MENU_DEBUG => {
+            let flag_checked = |condition| if condition { MF_CHECKED } else { 0 };
+            let flag_disabled = |condition| if condition { MF_DISABLED } else { 0 };
+
+            let menu = PopupMenu::new();
+            menu.add_entry(
+                MENU_STARTUP,
+                flag_checked(autostart.is_registered()),
+                cstr!("Run at system startup"),
+            );
+            menu.add_entry(
+                MENU_DEBUG,
+                flag_checked(winapi_util::console_check()) | flag_disabled(running_in_terminal),
+                cstr!("Show debug output"),
+            );
+            menu.add_entry(
+                MENU_DISABLE,
+                flag_checked(kbhook.is_none()),
+                cstr!("Disable"),
+            );
+            menu.add_entry(MENU_EXIT, 0, cstr!("Exit"));
+
+            match menu.show(msg.hwnd, msg.pt) {
+                Some(MENU_STARTUP) => {
+                    if autostart.is_registered() {
+                        autostart.remove();
+                    } else {
+                        autostart.register();
+                    }
+                }
+                Some(MENU_DEBUG) => {
                     // Toggle console window to display debug logs.
                     if winapi_util::console_check() {
                         winapi_util::console_close()
@@ -189,13 +204,9 @@ fn main() -> Result<()> {
                         winapi_util::console_open()
                     }
                 }
-                resources::MENU_STARTUP => {
-                    if autostart.is_registered() {
-                        autostart.remove();
-                    } else {
-                        autostart.register();
-                    }
-                }
+                Some(MENU_DISABLE) => toggle_enabled(&mut kbhook),
+                Some(MENU_EXIT) => unsafe { PostQuitMessage(0) },
+                Some(_) => unreachable!(),
                 _ => {}
             }
         }

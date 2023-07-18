@@ -105,20 +105,6 @@ pub fn icon_from_rc_numeric(id: u16) -> HICON {
     hicon
 }
 
-pub fn popupmenu_from_rc_numeric(id: u16) -> HMENU {
-    unsafe {
-        let menu = LoadMenuA(GetModuleHandleA(ptr::null()), id as _);
-        assert_ne!(menu, 0, "menu resource {} not found", id);
-        let submenu = GetSubMenu(menu, 0);
-        assert_ne!(
-            submenu, 0,
-            "menu resource {} requires a popup submenu item",
-            id
-        );
-        submenu
-    }
-}
-
 pub fn message_loop(mut cb: impl FnMut(&MSG)) -> i32 {
     unsafe {
         let mut msg = mem::zeroed();
@@ -179,20 +165,5 @@ fn disable_quick_edit_mode() {
             SetConsoleMode(console as _, mode);
         }
         CloseHandle(console);
-    }
-}
-
-pub fn popup_menu(menu: HMENU, msg: &MSG) -> i32 {
-    unsafe {
-        // Required for the menu to disappear when it loses focus.
-        SetForegroundWindow(msg.hwnd);
-        TrackPopupMenuEx(
-            menu,
-            TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
-            msg.pt.x,
-            msg.pt.y,
-            msg.hwnd,
-            ptr::null(),
-        )
     }
 }
