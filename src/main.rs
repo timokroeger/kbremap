@@ -16,7 +16,7 @@ use kbremap::{Config, KeyAction, Layout, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-use crate::winapi::{AutoStartEntry, KeyEvent, KeyType, KeyboardHook, PopupMenu, TrayIcon, Icon};
+use crate::winapi::{AutoStartEntry, Icon, KeyEvent, KeyType, KeyboardHook, PopupMenu, TrayIcon};
 
 fn config_path(config_file: &OsStr) -> Result<PathBuf> {
     let mut path_buf;
