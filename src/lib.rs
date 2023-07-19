@@ -1,4 +1,7 @@
-pub mod config;
-pub mod keyboard_hook;
-pub mod layout;
-pub mod virtual_keyboard;
+mod config;
+mod layout;
+mod virtual_keyboard;
+
+pub use  config::*;
+pub use  layout::*;
+pub use  virtual_keyboard::*;
