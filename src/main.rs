@@ -16,7 +16,7 @@ use kbremap::{Config, KeyAction, Layout, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-use crate::winapi::{AutoStartEntry, KeyEvent, KeyType, KeyboardHook, PopupMenu, TrayIcon};
+use crate::winapi::{AutoStartEntry, KeyEvent, KeyType, KeyboardHook, PopupMenu, TrayIcon, Icon};
 
 fn config_path(config_file: &OsStr) -> Result<PathBuf> {
     let mut path_buf;
@@ -125,12 +125,12 @@ fn main() -> Result<()> {
     // UI code
 
     // Load resources
-    let icon_enabled = winapi::icon_from_rc_numeric(resources::ICON_KEYBOARD);
-    let icon_disabled = winapi::icon_from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
+    let icon_enabled = Icon::from_rc_numeric(resources::ICON_KEYBOARD);
+    let icon_disabled = Icon::from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
 
     // Arbitrary ID in the WM_APP range, used to identify which tray icon a message originates from.
     const WM_APP_TRAYICON: u32 = WM_APP + 873;
-    let tray_icon = TrayIcon::new(WM_APP_TRAYICON, icon_enabled);
+    let tray_icon = TrayIcon::new(WM_APP_TRAYICON, icon_enabled.0);
 
     let cmd = env::current_exe().unwrap();
     let autostart = AutoStartEntry::new(
@@ -142,10 +142,10 @@ fn main() -> Result<()> {
     let toggle_enabled = |kbhook: &mut Option<KeyboardHook>| {
         if kbhook.is_some() {
             *kbhook = None;
-            tray_icon.set_icon(icon_disabled);
+            tray_icon.set_icon(icon_disabled.0);
         } else {
             *kbhook = Some(register_keyboard_hook(&layout, &config));
-            tray_icon.set_icon(icon_enabled);
+            tray_icon.set_icon(icon_enabled.0);
         }
     };
 

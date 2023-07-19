@@ -4,7 +4,6 @@ use std::{mem, ptr};
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Storage::FileSystem::*;
 use windows_sys::Win32::System::Console::*;
-use windows_sys::Win32::System::LibraryLoader::*;
 use windows_sys::Win32::System::Threading::CreateMutexA;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -23,12 +22,6 @@ pub fn register_instance(name: &CStr) -> bool {
         CloseHandle(handle);
         false
     }
-}
-
-pub fn icon_from_rc_numeric(id: u16) -> HICON {
-    let hicon = unsafe { LoadImageA(GetModuleHandleA(ptr::null()), id as _, IMAGE_ICON, 0, 0, 0) };
-    assert_ne!(hicon, 0, "icon resource {} not found", id);
-    hicon
 }
 
 pub fn message_loop(mut cb: impl FnMut(&MSG)) -> i32 {
