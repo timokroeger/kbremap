@@ -64,7 +64,7 @@ impl TrayIcon {
 
             // Set message as associated data
             let userdata = Box::new(UserData { msg_tray, icon });
-            SetWindowLongPtrA(hwnd, GWLP_USERDATA, Box::into_raw(userdata) as isize);
+            SetWindowLongPtrA(hwnd, GWLP_USERDATA, Box::into_raw(userdata) as _);
 
             // Create the tray icon
             add_tray_icon(hwnd);
