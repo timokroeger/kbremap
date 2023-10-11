@@ -33,18 +33,16 @@ impl KeyboardHook {
     /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediately be unregistered and not work."]
     pub fn set(callback: impl FnMut(KeyEvent) -> bool + 'static) -> KeyboardHook {
-        HOOK.with(|state| {
-            assert!(
-                state.take().is_none(),
-                "Only one keyboard hook can be registered per thread."
-            );
+        assert!(
+            HOOK.take().is_none(),
+            "Only one keyboard hook can be registered per thread."
+        );
 
-            state.set(Some(Box::new(callback)));
+        HOOK.set(Some(Box::new(callback)));
 
-            let handle = unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc), 0, 0) };
-            assert_ne!(handle, 0, "Failed to install low-level keyboard hook.");
-            KeyboardHook { handle }
-        })
+        let handle = unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc), 0, 0) };
+        assert_ne!(handle, 0, "Failed to install low-level keyboard hook.");
+        KeyboardHook { handle }
     }
 }
 
@@ -54,7 +52,7 @@ impl Drop for KeyboardHook {
             assert!(UnhookWindowsHookEx(self.handle) == TRUE);
             self.handle = 0;
         };
-        HOOK.with(Cell::take);
+        HOOK.take();
     }
 }
 
@@ -139,27 +137,26 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
     }
 
     let mut handled = false;
-    HOOK.with(|hook| {
-        // To call the closure registered for the keyboard hook we need to
-        // take it out of the cell to get mutable access. When done we move
-        // the closure back into the cell.
-        // As long as we prevent recursion by dropping injected events, windows
-        // should not be calling the hook again while it is already executing.
-        // Which means we will never `take()` the cell twice.
-        if let Some(mut h) = hook.take() {
-            handled = h(key_event);
-            hook.set(Some(h));
-        } else {
-            // There is one special case with classical CMD windows:
-            // The "Quick Edit Mode" option which is enabled by default.
-            // Windows stops to read from stdout and stderr when the user
-            // selects characters in the cmd window.
-            // Any write to stdout (e.g. a call to `println!()`) blocks while
-            // "Quick Edit Mode" is active. The nasty part is that the key event
-            // which exits the "Quick Edit Mode" triggers the hook a second time
-            // before the blocked write to stdout can return.
-        }
-    });
+
+    // To call the closure registered for the keyboard hook we need to
+    // take it out of the cell to get mutable access. When done we move
+    // the closure back into the cell.
+    // As long as we prevent recursion by dropping injected events, windows
+    // should not be calling the hook again while it is already executing.
+    // Which means we will never `take()` the cell twice.
+    if let Some(mut h) = HOOK.take() {
+        handled = h(key_event);
+        HOOK.set(Some(h));
+    } else {
+        // There is one special case with classical CMD windows:
+        // The "Quick Edit Mode" option which is enabled by default.
+        // Windows stops to read from stdout and stderr when the user
+        // selects characters in the cmd window.
+        // Any write to stdout (e.g. a call to `println!()`) blocks while
+        // "Quick Edit Mode" is active. The nasty part is that the key event
+        // which exits the "Quick Edit Mode" triggers the hook a second time
+        // before the blocked write to stdout can return.
+    }
 
     if handled {
         -1
