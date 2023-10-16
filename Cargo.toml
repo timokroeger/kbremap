@@ -13,8 +13,8 @@ cstr = "0.2.11"
 encode_unicode = "1.0"
 petgraph = { version = "0.6.0", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
-toml = "0.7.6"
-windows-sys = { version = "0.48", features = [
+toml = "0.8.12"
+windows-sys = { version = "0.52.0", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Security",
@@ -30,10 +30,10 @@ windows-sys = { version = "0.48", features = [
 ] }
 
 [build-dependencies]
-winresource = "0.1.15"
+winresource = { version = "0.1.15", default-features = false }
 
 # Size optimized build:
-# `cargo +nightly build --release -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target i686-pc-windows-msvc`
+# `cargo +nightly build --release -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target x86_64-pc-windows-msvc`
 [profile.release]
 lto = true
 opt-level = "z"
