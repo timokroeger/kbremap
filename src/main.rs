@@ -130,7 +130,7 @@ fn main() -> Result<()> {
 
     // Arbitrary ID in the WM_APP range, used to identify which tray icon a message originates from.
     const WM_APP_TRAYICON: u32 = WM_APP + 873;
-    let tray_icon = TrayIcon::new(WM_APP_TRAYICON, icon_enabled.0);
+    let mut tray_icon = TrayIcon::new(WM_APP_TRAYICON, icon_enabled.0);
 
     let cmd = env::current_exe().unwrap();
     let autostart = AutoStartEntry::new(
@@ -139,7 +139,7 @@ fn main() -> Result<()> {
     );
 
     // Enabled state can be changed by double click to the tray icon or from the context menu.
-    let toggle_enabled = |kbhook: &mut Option<KeyboardHook>| {
+    let mut toggle_enabled = |kbhook: &mut Option<KeyboardHook>| {
         if kbhook.is_some() {
             *kbhook = None;
             tray_icon.set_icon(icon_disabled.0);
