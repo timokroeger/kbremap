@@ -153,52 +153,41 @@ fn main() -> Result<()> {
     winapi::message_loop(|msg| match (msg.message, msg.lParam as _) {
         (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => toggle_enabled(&mut kbhook),
         (WM_APP_TRAYICON, WM_RBUTTONUP) => {
-            const MENU_STARTUP: u32 = 1;
-            const MENU_DEBUG: u32 = 2;
-            const MENU_DISABLE: u32 = 3;
-            const MENU_EXIT: u32 = 4;
-
-            let flag_checked = |condition| if condition { MF_CHECKED } else { 0 };
-            let flag_disabled = |condition| if condition { MF_DISABLED } else { 0 };
-
-            let menu = PopupMenu::new();
-            menu.add_entry(
-                MENU_STARTUP,
-                flag_checked(autostart.is_registered()),
+            let mut menu = PopupMenu::new();
+            let entry_startup = menu.add_entry(
                 cstr!("Run at system startup"),
+                autostart.is_registered(),
+                false,
             );
-            menu.add_entry(
-                MENU_DEBUG,
-                flag_checked(winapi::console_check()) | flag_disabled(running_in_terminal),
+            let entry_debug = menu.add_entry(
                 cstr!("Show debug output"),
+                winapi::console_check(),
+                running_in_terminal,
             );
-            menu.add_entry(
-                MENU_DISABLE,
-                flag_checked(kbhook.is_none()),
-                cstr!("Disable"),
-            );
-            menu.add_entry(MENU_EXIT, 0, cstr!("Exit"));
+            let entry_disable = menu.add_entry(cstr!("Disable"), kbhook.is_none(), false);
+            let entry_exit = menu.add_entry(cstr!("Exit"), false, false);
 
-            match menu.show(msg.hwnd, msg.pt) {
-                Some(MENU_STARTUP) => {
-                    if autostart.is_registered() {
-                        autostart.remove();
-                    } else {
-                        autostart.register();
-                    }
+            let Some(menu_entry) = menu.show(msg.hwnd, msg.pt) else {
+                return;
+            };
+
+            if menu_entry == entry_startup {
+                if autostart.is_registered() {
+                    autostart.remove();
+                } else {
+                    autostart.register();
                 }
-                Some(MENU_DEBUG) => {
-                    // Toggle console window to display debug logs.
-                    if winapi::console_check() {
-                        winapi::console_close()
-                    } else {
-                        winapi::console_open()
-                    }
+            } else if menu_entry == entry_debug {
+                // Toggle console window to display debug logs.
+                if winapi::console_check() {
+                    winapi::console_close()
+                } else {
+                    winapi::console_open()
                 }
-                Some(MENU_DISABLE) => toggle_enabled(&mut kbhook),
-                Some(MENU_EXIT) => unsafe { PostQuitMessage(0) },
-                Some(_) => unreachable!(),
-                _ => {}
+            } else if menu_entry == entry_disable {
+                toggle_enabled(&mut kbhook)
+            } else if menu_entry == entry_exit {
+                unsafe { PostQuitMessage(0) }
             }
         }
         _ => {}
