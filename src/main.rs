@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use anyhow::{anyhow, Context, Result};
-use cstr::cstr;
 use kbremap::{Config, KeyAction, Layout, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -134,7 +133,7 @@ fn main() -> Result<()> {
 
     let cmd = env::current_exe().unwrap();
     let autostart = AutoStartEntry::new(
-        cstr!("kbremap").into(),
+        c"kbremap".into(),
         CString::new(cmd.to_str().unwrap()).unwrap(),
     );
 
@@ -165,19 +164,15 @@ fn main() -> Result<()> {
             menu.add_entry(
                 MENU_STARTUP,
                 flag_checked(autostart.is_registered()),
-                cstr!("Run at system startup"),
+                c"Run at system startup",
             );
             menu.add_entry(
                 MENU_DEBUG,
                 flag_checked(winapi::console_check()) | flag_disabled(running_in_terminal),
-                cstr!("Show debug output"),
+                c"Show debug output",
             );
-            menu.add_entry(
-                MENU_DISABLE,
-                flag_checked(kbhook.is_none()),
-                cstr!("Disable"),
-            );
-            menu.add_entry(MENU_EXIT, 0, cstr!("Exit"));
+            menu.add_entry(MENU_DISABLE, flag_checked(kbhook.is_none()), c"Disable");
+            menu.add_entry(MENU_EXIT, 0, c"Exit");
 
             match menu.show(msg.hwnd, msg.pt) {
                 Some(MENU_STARTUP) => {

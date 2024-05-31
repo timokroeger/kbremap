@@ -1,6 +1,5 @@
 use std::{ffi::CString, mem, ptr};
 
-use cstr::cstr;
 use windows_sys::Win32::{Foundation::MAX_PATH, System::Registry::*};
 
 pub struct AutoStartEntry {
@@ -23,7 +22,7 @@ impl AutoStartEntry {
             let mut key: HKEY = mem::zeroed();
             RegCreateKeyA(
                 HKEY_CURRENT_USER,
-                cstr!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run")
+                c"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"
                     .as_ptr()
                     .cast(),
                 &mut key,
