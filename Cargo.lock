@@ -52,6 +52,7 @@ dependencies = [
  "serde",
  "toml",
  "windows-sys",
+ "winmsg-executor",
  "winresource",
 ]
 
@@ -247,6 +248,15 @@ name = "windows_x86_64_msvc"
 version = "0.52.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bec47e5bfd1bff0eeaf6d8b485cc1074891a197ab4225d504cb7a1ab88b02bf0"
+
+[[package]]
+name = "winmsg-executor"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95e0a8c9eb73883acde476a526ca52516a98694870a48b23603ec7be8260c926"
+dependencies = [
+ "windows-sys",
+]
 
 [[package]]
 name = "winnow"

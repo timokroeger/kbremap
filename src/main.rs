@@ -4,6 +4,7 @@
 mod resources;
 mod winapi;
 
+use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::ffi::{CString, OsStr};
 use std::hash::{Hash, Hasher};
@@ -14,6 +15,7 @@ use anyhow::{anyhow, Context, Result};
 use kbremap::{Config, KeyAction, Layout, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
+use winmsg_executor::{quit_message_loop, run_message_loop_with_dispatcher};
 
 use crate::winapi::{AutoStartEntry, Icon, KeyEvent, KeyType, KeyboardHook, PopupMenu, TrayIcon};
 
@@ -119,7 +121,7 @@ fn main() -> Result<()> {
     let config = Config::from_toml(&config_str)?;
     let layout = config.to_layout();
 
-    let mut kbhook = Some(register_keyboard_hook(&layout, &config));
+    let kbhook = &RefCell::new(Some(register_keyboard_hook(&layout, &config)));
 
     // UI code
 
@@ -129,7 +131,7 @@ fn main() -> Result<()> {
 
     // Arbitrary ID in the WM_APP range, used to identify which tray icon a message originates from.
     const WM_APP_TRAYICON: u32 = WM_APP + 873;
-    let mut tray_icon = TrayIcon::new(WM_APP_TRAYICON, icon_enabled.0);
+    let tray_icon = TrayIcon::new(WM_APP_TRAYICON, icon_enabled.0);
 
     let cmd = env::current_exe().unwrap();
     let autostart = AutoStartEntry::new(
@@ -138,7 +140,8 @@ fn main() -> Result<()> {
     );
 
     // Enabled state can be changed by double click to the tray icon or from the context menu.
-    let mut toggle_enabled = |kbhook: &mut Option<KeyboardHook>| {
+    let toggle_enabled = || {
+        let mut kbhook = kbhook.borrow_mut();
         if kbhook.is_some() {
             *kbhook = None;
             tray_icon.set_icon(icon_disabled.0);
@@ -149,9 +152,16 @@ fn main() -> Result<()> {
     };
 
     // Event loop required for the low-level keyboard hook and the tray icon.
-    winapi::message_loop(|msg| match (msg.message, msg.lParam as _) {
-        (WM_APP_TRAYICON, WM_LBUTTONDBLCLK) => toggle_enabled(&mut kbhook),
-        (WM_APP_TRAYICON, WM_RBUTTONUP) => {
+    run_message_loop_with_dispatcher(move |msg| {
+        if msg.message != WM_APP_TRAYICON {
+            return false;
+        }
+
+        let event = msg.lParam as u32;
+        if event == WM_LBUTTONDBLCLK {
+            toggle_enabled();
+            true
+        } else if event == WM_RBUTTONUP {
             const MENU_STARTUP: u32 = 1;
             const MENU_DEBUG: u32 = 2;
             const MENU_DISABLE: u32 = 3;
@@ -171,7 +181,11 @@ fn main() -> Result<()> {
                 flag_checked(winapi::console_check()) | flag_disabled(running_in_terminal),
                 c"Show debug output",
             );
-            menu.add_entry(MENU_DISABLE, flag_checked(kbhook.is_none()), c"Disable");
+            menu.add_entry(
+                MENU_DISABLE,
+                flag_checked(kbhook.borrow().is_none()),
+                c"Disable",
+            );
             menu.add_entry(MENU_EXIT, 0, c"Exit");
 
             match menu.show(msg.hwnd, msg.pt) {
@@ -190,13 +204,15 @@ fn main() -> Result<()> {
                         winapi::console_open()
                     }
                 }
-                Some(MENU_DISABLE) => toggle_enabled(&mut kbhook),
-                Some(MENU_EXIT) => unsafe { PostQuitMessage(0) },
+                Some(MENU_DISABLE) => toggle_enabled(),
+                Some(MENU_EXIT) => quit_message_loop(),
                 Some(_) => unreachable!(),
                 _ => {}
             }
+            true
+        } else {
+            false
         }
-        _ => {}
     });
 
     Ok(())

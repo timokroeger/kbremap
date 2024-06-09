@@ -1,5 +1,5 @@
 use std::ffi::CStr;
-use std::{mem, ptr};
+use std::ptr;
 
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Storage::FileSystem::*;
@@ -21,23 +21,6 @@ pub fn register_instance(name: &CStr) -> bool {
 
         CloseHandle(handle);
         false
-    }
-}
-
-pub fn message_loop(mut cb: impl FnMut(&MSG)) -> i32 {
-    unsafe {
-        let mut msg = mem::zeroed();
-        loop {
-            match GetMessageA(&mut msg, 0, 0, 0) {
-                1 => {
-                    cb(&msg);
-                    TranslateMessage(&msg);
-                    DispatchMessageA(&msg);
-                }
-                0 => return msg.wParam as _,
-                _ => unreachable!(),
-            }
-        }
     }
 }
 
