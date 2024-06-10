@@ -38,7 +38,10 @@ fn config_path(config_file: &OsStr) -> Result<PathBuf> {
     ))
 }
 
-fn register_keyboard_hook(layout: &Layout, config: &Config) -> KeyboardHook {
+fn register_keyboard_hook(
+    layout: &Layout,
+    config: &Config,
+) -> KeyboardHook<impl FnMut(KeyEvent) -> bool + 'static> {
     let mut kb = VirtualKeyboard::new(layout.clone());
     let config_caps_lock_layer = config.caps_lock_layer().map(String::from);
     KeyboardHook::set(move |mut key_event| {

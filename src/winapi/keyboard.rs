@@ -9,20 +9,22 @@ use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-type HookFn = dyn FnMut(KeyEvent) -> bool;
-
 thread_local! {
     /// Stores the hook callback for the current thread.
-    static HOOK: Cell<Option<Box<HookFn>>> = Cell::default();
+    static HOOK: Cell<*mut ()> = const { Cell::new(ptr::null_mut()) };
 }
 
 /// Wrapper for the low-level keyboard hook API.
 /// Automatically unregisters the hook when dropped.
-pub struct KeyboardHook {
+pub struct KeyboardHook<F> {
     handle: HHOOK,
+    _hook_proc: Box<F>,
 }
 
-impl KeyboardHook {
+impl<F> KeyboardHook<F>
+where
+    F: FnMut(KeyEvent) -> bool + 'static,
+{
     /// Sets the low-level keyboard hook for this thread.
     ///
     /// The closure receives key press and key release events. When the closure
@@ -32,27 +34,28 @@ impl KeyboardHook {
     ///
     /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediately be unregistered and not work."]
-    pub fn set(callback: impl FnMut(KeyEvent) -> bool + 'static) -> KeyboardHook {
+    pub fn set(callback: F) -> Self {
         assert!(
-            HOOK.take().is_none(),
+            HOOK.get().is_null(),
             "Only one keyboard hook can be registered per thread."
         );
 
-        HOOK.set(Some(Box::new(callback)));
+        let mut callback = Box::new(callback);
+        HOOK.set(&mut *callback as *mut F as *mut ());
 
-        let handle = unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc), 0, 0) };
+        let handle = unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc::<F>), 0, 0) };
         assert_ne!(handle, 0, "Failed to install low-level keyboard hook.");
-        KeyboardHook { handle }
+        KeyboardHook {
+            handle,
+            _hook_proc: callback,
+        }
     }
 }
 
-impl Drop for KeyboardHook {
+impl<F> Drop for KeyboardHook<F> {
     fn drop(&mut self) {
-        unsafe {
-            assert!(UnhookWindowsHookEx(self.handle) == TRUE);
-            self.handle = 0;
-        };
-        HOOK.take();
+        unsafe { UnhookWindowsHookEx(self.handle) };
+        HOOK.set(ptr::null_mut());
     }
 }
 
@@ -120,7 +123,10 @@ impl KeyEvent {
 }
 
 /// The actual WinAPI compatible callback.
-unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn hook_proc<F>(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT
+where
+    F: FnMut(KeyEvent) -> bool + 'static,
+{
     if code != HC_ACTION as i32 {
         return CallNextHookEx(0, code, wparam, lparam);
     }
@@ -138,15 +144,13 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
 
     let mut handled = false;
 
-    // To call the closure registered for the keyboard hook we need to
-    // take it out of the cell to get mutable access. When done we move
-    // the closure back into the cell.
     // As long as we prevent recursion by dropping injected events, windows
     // should not be calling the hook again while it is already executing.
-    // Which means we will never `take()` the cell twice.
-    if let Some(mut h) = HOOK.take() {
-        handled = h(key_event);
-        HOOK.set(Some(h));
+    // That means that the pointer in TLS storage should always be valid.
+    let hook_ptr = HOOK.replace(ptr::null_mut()) as *mut F;
+    if let Some(hook) = unsafe { hook_ptr.as_mut() } {
+        handled = hook(key_event);
+        HOOK.set(hook_ptr as *mut ());
     } else {
         // There is one special case with classical CMD windows:
         // The "Quick Edit Mode" option which is enabled by default.
