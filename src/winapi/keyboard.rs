@@ -173,7 +173,13 @@ pub fn send_key(key: KeyEvent) {
         let n_inputs = match key.key {
             KeyType::VirtualKey(vk) => {
                 inputs[0].r#type = INPUT_KEYBOARD;
-                inputs[0].Anonymous.ki = key_input_from_event(key, vk.into());
+                inputs[0].Anonymous.ki = KEYBDINPUT {
+                    wVk: vk.into(),
+                    wScan: key.scan_code,
+                    dwFlags: if key.up { KEYEVENTF_KEYUP } else { 0 },
+                    time: key.time,
+                    dwExtraInfo: 0,
+                };
                 1
             }
             KeyType::Unicode(c) => {
@@ -183,11 +189,14 @@ pub fn send_key(key: KeyEvent) {
                     .iter_mut()
                     .zip(c.to_utf16())
                     .map(|(input, c)| {
-                        let mut kb_input: KEYBDINPUT = key_input_from_event(key, 0);
-                        kb_input.wScan = c;
-                        kb_input.dwFlags |= KEYEVENTF_UNICODE;
                         input.r#type = INPUT_KEYBOARD;
-                        input.Anonymous.ki = kb_input;
+                        input.Anonymous.ki = KEYBDINPUT {
+                            wVk: 0,
+                            wScan: c,
+                            dwFlags: KEYEVENTF_UNICODE | if key.up { KEYEVENTF_KEYUP } else { 0 },
+                            time: key.time,
+                            dwExtraInfo: 0,
+                        };
                     })
                     .count()
             }
@@ -198,16 +207,6 @@ pub fn send_key(key: KeyEvent) {
             inputs.as_mut_ptr(),
             mem::size_of::<INPUT>() as _,
         );
-    }
-}
-
-fn key_input_from_event(key: KeyEvent, virtual_key: u16) -> KEYBDINPUT {
-    KEYBDINPUT {
-        wVk: virtual_key,
-        wScan: key.scan_code,
-        dwFlags: if key.up { KEYEVENTF_KEYUP } else { 0 },
-        time: key.time,
-        dwExtraInfo: 0,
     }
 }
 
