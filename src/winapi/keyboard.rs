@@ -9,9 +9,13 @@ use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
+// Use invalid pointers to track state.
+const HOOK_INVALID: usize = 0;
+const HOOK_EXECUTING: usize = 1;
+
 thread_local! {
-    /// Stores the hook callback for the current thread.
-    static HOOK: Cell<*mut ()> = const { Cell::new(ptr::null_mut()) };
+    /// Stores a type erased pointer to the hook closure.
+    static HOOK: Cell<usize> = const { Cell::new(HOOK_INVALID) };
 }
 
 /// Wrapper for the low-level keyboard hook API.
@@ -36,12 +40,12 @@ where
     #[must_use = "The hook will immediately be unregistered and not work."]
     pub fn set(callback: F) -> Self {
         assert!(
-            HOOK.get().is_null(),
+            HOOK.get() == 0,
             "Only one keyboard hook can be registered per thread."
         );
 
         let mut callback = Box::new(callback);
-        HOOK.set(&mut *callback as *mut F as *mut ());
+        HOOK.set(&mut *callback as *mut F as usize);
 
         let handle = unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc::<F>), 0, 0) };
         assert_ne!(handle, 0, "Failed to install low-level keyboard hook.");
@@ -55,7 +59,7 @@ where
 impl<F> Drop for KeyboardHook<F> {
     fn drop(&mut self) {
         unsafe { UnhookWindowsHookEx(self.handle) };
-        HOOK.set(ptr::null_mut());
+        HOOK.set(HOOK_INVALID);
     }
 }
 
@@ -147,10 +151,10 @@ where
     // As long as we prevent recursion by dropping injected events, windows
     // should not be calling the hook again while it is already executing.
     // That means that the pointer in TLS storage should always be valid.
-    let hook_ptr = HOOK.replace(ptr::null_mut()) as *mut F;
+    let hook_ptr = HOOK.replace(HOOK_EXECUTING) as *mut F;
     if let Some(hook) = unsafe { hook_ptr.as_mut() } {
         handled = hook(key_event);
-        HOOK.set(hook_ptr as *mut ());
+        HOOK.set(hook_ptr as usize);
     } else {
         // There is one special case with classical CMD windows:
         // The "Quick Edit Mode" option which is enabled by default.
