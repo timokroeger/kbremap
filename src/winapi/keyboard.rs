@@ -1,6 +1,6 @@
 //! Safe abstraction over the low-level windows keyboard hook API.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::fmt::Display;
 use std::{mem, ptr};
 
@@ -16,6 +16,7 @@ const HOOK_EXECUTING: usize = 1;
 thread_local! {
     /// Stores a type erased pointer to the hook closure.
     static HOOK: Cell<usize> = const { Cell::new(HOOK_INVALID) };
+    static QUEUED_INPUTS: RefCell<Vec<INPUT>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Wrapper for the low-level keyboard hook API.
@@ -139,32 +140,36 @@ where
     let key_event = KeyEvent::from_hook_lparam(hook_lparam);
     let injected = hook_lparam.flags & LLKHF_INJECTED != 0;
 
-    // `SendInput()` internally calls the hook function. Filter out injected events
-    // to prevent recursion and potential stack overflows if our remapping logic
-    // sent the injected event.
+    // `SendInput()` internally calls the hook function. Filter out injected
+    // events to prevent recursion and potential stack overflows if our
+    // remapping logic has sent the injected event.
     if injected {
         return CallNextHookEx(0, code, wparam, lparam);
     }
 
-    let mut handled = false;
+    // There are two conditions for which the hook can be re-entered:
+    // 1. `SendInput()` creates new injected input events.
+    //   We queue input events and send them after the hook closure has
+    //   returned to prevent a second mutable borrow to the closure.
+    // 2. `CallNextHookEx()` when more than one unhandled input event is queued.
+    //   Not exposed to the user and such must not be called within the closure.
+    //
+    // How to trigger 2.:
+    // The classic CMD window has a "Quick Edit Mode" option which is enabled
+    // by default. Windows stops to read from stdout and stderr when the user
+    // selects characters in the CMD window.
+    // Any write to stdout (e.g. a call to `println!()`) blocks while
+    // "Quick Edit Mode" is active. The key event which exits the "Quick Edit
+    // Mode" triggers the hook a second time.
 
-    // As long as we prevent recursion by dropping injected events, windows
-    // should not be calling the hook again while it is already executing.
-    // That means that the pointer in TLS storage should always be valid.
+    // Replace the pointer to the closure with a marker, so that `send_key()`
+    // can detect if it was called from within the hook.
     let hook_ptr = HOOK.replace(HOOK_EXECUTING) as *mut F;
-    if let Some(hook) = unsafe { hook_ptr.as_mut() } {
-        handled = hook(key_event);
-        HOOK.set(hook_ptr as usize);
-    } else {
-        // There is one special case with classical CMD windows:
-        // The "Quick Edit Mode" option which is enabled by default.
-        // Windows stops to read from stdout and stderr when the user
-        // selects characters in the cmd window.
-        // Any write to stdout (e.g. a call to `println!()`) blocks while
-        // "Quick Edit Mode" is active. The nasty part is that the key event
-        // which exits the "Quick Edit Mode" triggers the hook a second time
-        // before the blocked write to stdout can return.
-    }
+    let hook = unsafe { hook_ptr.as_mut().unwrap() };
+    let handled = hook(key_event);
+    HOOK.set(hook_ptr as usize);
+
+    send_queued_inputs();
 
     if handled {
         -1
@@ -175,47 +180,67 @@ where
 
 /// Sends a virtual key event.
 pub fn send_key(key: KeyEvent) {
-    unsafe {
-        let mut inputs: [INPUT; 2] = mem::zeroed();
-
-        let n_inputs = match key.key {
+    QUEUED_INPUTS.with_borrow_mut(|queued_inputs| {
+        match key.key {
             KeyType::VirtualKey(vk) => {
-                inputs[0].r#type = INPUT_KEYBOARD;
-                inputs[0].Anonymous.ki = KEYBDINPUT {
-                    wVk: vk.into(),
-                    wScan: key.scan_code,
-                    dwFlags: if key.up { KEYEVENTF_KEYUP } else { 0 },
-                    time: key.time,
-                    dwExtraInfo: 0,
-                };
-                1
+                queued_inputs.push(INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: vk.into(),
+                            wScan: key.scan_code,
+                            dwFlags: if key.up { KEYEVENTF_KEYUP } else { 0 },
+                            time: key.time,
+                            dwExtraInfo: 0,
+                        },
+                    },
+                });
             }
             KeyType::Unicode(c) => {
                 // Sends a unicode character, knows as `VK_PACKET`.
                 // Interestingly this is faster than sending a regular virtual key event.
-                inputs
-                    .iter_mut()
-                    .zip(c.to_utf16())
-                    .map(|(input, c)| {
-                        input.r#type = INPUT_KEYBOARD;
-                        input.Anonymous.ki = KEYBDINPUT {
-                            wVk: 0,
-                            wScan: c,
-                            dwFlags: KEYEVENTF_UNICODE | if key.up { KEYEVENTF_KEYUP } else { 0 },
-                            time: key.time,
-                            dwExtraInfo: 0,
-                        };
-                    })
-                    .count()
+                for c in c.to_utf16() {
+                    queued_inputs.push(INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 {
+                            ki: KEYBDINPUT {
+                                wVk: 0,
+                                wScan: c,
+                                dwFlags: KEYEVENTF_UNICODE | if key.up { KEYEVENTF_KEYUP } else { 0 },
+                                time: key.time,
+                                dwExtraInfo: 0,
+                            },
+                        },
+                    });
+                }
             }
         };
+    });
 
-        SendInput(
-            n_inputs as _,
-            inputs.as_mut_ptr(),
-            mem::size_of::<INPUT>() as _,
-        );
+    if HOOK.get() != HOOK_EXECUTING {
+        // Send inputs only when not called from within the hook process.
+        send_queued_inputs();
+    } else {
+        // Events will be sent when leaving the hook to prevent re-entrancy edge cases.
     }
+}
+
+fn send_queued_inputs() {
+    let mut queued_inputs = QUEUED_INPUTS.with_borrow_mut(|qi| std::mem::replace(qi, Vec::new()));
+
+    if !queued_inputs.is_empty() {
+        unsafe {
+            SendInput(
+                queued_inputs.len() as u32,
+                queued_inputs.as_ptr(),
+                mem::size_of::<INPUT>() as _,
+            )
+        };
+        queued_inputs.clear();
+    }
+
+    // Re-use the previous allocation
+    QUEUED_INPUTS.with_borrow_mut(move |qi| std::mem::replace(qi, queued_inputs));
 }
 
 /// Returns a virtual key code if the requested character can be typed with a
