@@ -1,43 +1,52 @@
 //! Remapping and layer switching logic.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{HashMap, HashSet};
 
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::{algo, Directed, Graph};
 
-use crate::layout::{KeyAction, Layout};
+use crate::layout::{KeyAction, LayoutBuilder};
+use crate::KeyType;
 
 /// A keyboard layout can be viewed as graph where layers are the nodes and
 /// modifiers (layer change keys) are the egdes.
 type LayerGraph = Graph<(), Vec<u16>, Directed, u8>;
 
+type LayerIdx = NodeIndex<u8>;
+
 /// Collection of virtual keyboard layers and logic to switch between them
 /// depending on which modifier keys are pressed.
 #[derive(Debug)]
 pub struct VirtualKeyboard {
-    /// Describes the key mappings of this virtual keyboard.
-    layout: Layout,
+    // Immutable
+    // Key: (layer, scan_code)
+    keymap: HashMap<(LayerIdx, u16), KeyAction>,
+
+    locks: HashMap<(LayerIdx, u16), u8>,
 
     /// Set of unique scan codes used for layer switching.
-    modifiers_scan_codes: BTreeSet<u16>,
+    modifiers_scan_codes: HashSet<u16>,
 
     /// Immutable graph used as reference to rebuild the active layer graph when
     /// the locked layer changes.
     base_layer_graph: LayerGraph,
-    base_layer: NodeIndex<u8>,
+    base_layer: LayerIdx,
 
+    layer_names: Vec<String>,
+
+    // Mutable below
     /// Active layer graph to figure out which layer is active.
     active_layer_graph: LayerGraph,
 
     /// Layer used when no modifier keys are pressed.
-    locked_layer: NodeIndex<u8>,
+    locked_layer: LayerIdx,
 
     /// Keeps track of layer activations over time.
     ///
     /// The first entry is always the base layer.
     /// The last element is the index of the currently active layer.
-    layer_history: Vec<NodeIndex<u8>>,
+    layer_history: Vec<LayerIdx>,
 
     /// Chronologically sorted modifier scan codes used to traverse the
     /// layer graph to determine the active layer.
@@ -45,51 +54,56 @@ pub struct VirtualKeyboard {
 
     /// Keeps track of all pressed keys so that we always can send the matching
     /// action after key release, even when the layer has changed.
-    pressed_keys: BTreeMap<u16, Option<KeyAction>>,
+    pressed_keys: HashMap<u16, Option<KeyAction>>,
 }
 
 impl VirtualKeyboard {
     /// Create a new virtual keyboard with `layout`.
-    pub fn new(layout: Layout) -> Self {
-        // Add modifiers as edges to the graph.
-        // Include also lock modifiers so that they change to the target layer on key press
-        // (even before the locking locking runs on key release).
+    pub fn new(layout: LayoutBuilder) -> Self {
+        // TODO: fix abstractions
+        let mut keymap = HashMap::new();
+        let mut modifiers_scan_codes = HashSet::new();
+        let mut modifier_edges = HashMap::new();
+        let mut locks = HashMap::new();
 
-        // Collect and sort modifiers to make merging easy.
-        let mut modifiers: Vec<_> = layout.modifiers().chain(layout.layer_locks()).collect();
-        modifiers.sort_by(|a, b| {
-            a.layer_from
-                .cmp(&b.layer_from)
-                .then(a.layer_to.cmp(&b.layer_to))
-        });
+        for key in layout.keys {
+            keymap.insert((key.layer.into(), key.scan_code), key.action);
+            match key.key_type {
+                KeyType::Normal => {}
+                // Add modifiers as edges to the graph.
+                KeyType::Modifier(target_layer) => {
+                    modifiers_scan_codes.insert(key.scan_code);
 
-        let mut modifiers_scan_codes = BTreeSet::new();
-        let mut edges: Vec<(u8, u8, Vec<u16>)> = Vec::new();
-        for modifier in modifiers {
-            modifiers_scan_codes.insert(modifier.scan_code);
-
-            // A lock modifier key can lock the layer it is defined on by targeting the own layer.
-            // Skip adding those self-lock modifier to the layer graph to prevent cycles.
-            // They would not have any effect because they do not change the layer.
-            if modifier.layer_from == modifier.layer_to {
-                continue;
-            }
-
-            // Merge multiple modifiers between two layers into a single edge to make partial graph
-            // reversal for layer locking easier.
-            match edges.last_mut() {
-                Some(last) if last.0 == modifier.layer_from && last.1 == modifier.layer_to => {
-                    last.2.push(modifier.scan_code);
+                    let edge_scan_codes = modifier_edges
+                        .entry((key.layer, target_layer))
+                        .or_insert(Vec::new());
+                    edge_scan_codes.push(key.scan_code);
                 }
-                _ => edges.push((
-                    modifier.layer_from,
-                    modifier.layer_to,
-                    vec![modifier.scan_code],
-                )),
+                // Treat locks as modifier so that they change to the target layer on key press
+                // (before the actual locking happens on key release).
+                KeyType::Lock(target_layer) => {
+                    modifiers_scan_codes.insert(key.scan_code);
+                    locks.insert((key.layer.into(), key.scan_code), target_layer);
+
+                    // A lock modifier key can lock the layer it is defined on by targeting the own layer.
+                    // Skip adding those self-lock modifier to the layer graph to prevent cycles.
+                    // They would not have any effect because they do not change the layer.
+                    if key.layer != target_layer {
+                        let edge_scan_codes = modifier_edges
+                            .entry((key.layer, target_layer))
+                            .or_insert(Vec::new());
+                        edge_scan_codes.push(key.scan_code);
+                    }
+                }
             }
         }
 
-        let layer_graph: LayerGraph = Graph::from_edges(edges);
+        // Add modifiers as edges to the graph.
+        let layer_graph: LayerGraph = Graph::from_edges(
+            modifier_edges
+                .into_iter()
+                .map(|((from, to), scan_scodes)| (from, to, scan_scodes)),
+        );
 
         // Check for cycles and find the base layer.
         let base_layer = *algo::toposort(&layer_graph, None)
@@ -98,28 +112,30 @@ impl VirtualKeyboard {
             .unwrap_or(&NodeIndex::new(0));
 
         Self {
-            layout,
+            keymap,
+            locks,
             modifiers_scan_codes,
             base_layer_graph: layer_graph.clone(),
             base_layer,
+            layer_names: layout.layer_names,
             active_layer_graph: layer_graph,
             locked_layer: base_layer,
             layer_history: vec![base_layer],
             pressed_modifiers: Vec::new(),
-            pressed_keys: BTreeMap::new(),
+            pressed_keys: HashMap::new(),
         }
     }
 
-    fn active_layer_idx(&self) -> usize {
-        self.layer_history[self.layer_history.len() - 1].index()
+    fn active_layer_idx(&self) -> LayerIdx {
+        *self.layer_history.last().unwrap()
     }
 
     pub fn active_layer(&self) -> &str {
-        &self.layout.layer_names()[self.active_layer_idx()]
+        &self.layer_names[self.active_layer_idx().index()]
     }
 
     pub fn locked_layer(&self) -> &str {
-        &self.layout.layer_names()[self.locked_layer.index()]
+        &self.layer_names[self.locked_layer.index()]
     }
 
     /// Returns the layer activated by the currently pressed modifier keys.
@@ -214,15 +230,13 @@ impl VirtualKeyboard {
         // If we do not track active key presses the key down and key up events
         // may not be the same if the layer has changed in between.
         let action = self.pressed_keys.remove(&scan_code).unwrap_or_else(|| {
-            let key = self.layout.get_key(scan_code);
-
             // Get the key action from the current layer. If the key is not available on
             // the current layer, check the previous layer. Repeat until a action was
             // found or we run out of layers.
             self.layer_history
                 .iter()
                 .rev()
-                .find_map(|layer| key.action(layer.index() as _))
+                .find_map(|layer| self.keymap.get(&(*layer, scan_code)).copied())
         });
 
         if self.modifiers_scan_codes.contains(&scan_code) {
@@ -246,16 +260,14 @@ impl VirtualKeyboard {
 
             // Update layer locks on release. If we changed the lock state on press,
             // a repeated key event would unlock the layer again right away.
-            let key = self.layout.get_key(scan_code);
-            if let Some(lock_layer) = key.layer_lock(self.active_layer_idx() as u8) {
-                self.lock_layer(lock_layer);
-            } else if self.locked_layer != self.base_layer {
+            if let Some(target_layer) = self.locks.get(&(self.active_layer_idx(), scan_code)) {
+                self.lock_layer(*target_layer);
+            } else {
                 // Try to unlock a previously locked layer
                 let active_layer_from_base =
                     self.find_layer_activation(&self.base_layer_graph, self.base_layer);
-                if key.layer_lock(active_layer_from_base.index() as u8)
-                    == Some(self.locked_layer.index() as u8)
-                {
+                let layer_to_lock = self.locks.get(&(active_layer_from_base, scan_code));
+                if layer_to_lock == Some(&(self.locked_layer.index() as u8)) {
                     self.lock_layer(self.base_layer.index() as u8);
                 }
             }

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use anyhow::{anyhow, Context, Result};
-use kbremap::{Config, KeyAction, Layout, VirtualKeyboard};
+use kbremap::{Config, KeyAction, LayoutBuilder, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use winmsg_executor::{quit_message_loop, run_message_loop_with_dispatcher};
@@ -39,7 +39,7 @@ fn config_path(config_file: &OsStr) -> Result<PathBuf> {
 }
 
 fn register_keyboard_hook(
-    layout: &Layout,
+    layout: &LayoutBuilder,
     config: &Config,
 ) -> KeyboardHook<impl FnMut(KeyEvent) -> bool + 'static> {
     let mut kb = VirtualKeyboard::new(layout.clone());

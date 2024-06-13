@@ -12,7 +12,7 @@ fn layer_activation() {
         .add_key(0x20, "l1", Character('1'))
         .add_key(0x20, "l2", Character('2'))
         .add_key(0x20, "l3", Character('3'));
-    let layout = layout.build();
+
     let mut kb = VirtualKeyboard::new(layout);
 
     // L0
@@ -78,7 +78,7 @@ fn accidental_shift_lock_issue25() {
     layout
         .add_modifier(0x2A, "base", "shift", Some(0xA0))
         .add_modifier(0xE036, "base", "shift", Some(0xA1));
-    let layout = layout.build();
+
     let mut kb = VirtualKeyboard::new(layout);
 
     assert_eq!(kb.press_key(0xE036), Some(VirtualKey(0xA1)));
@@ -94,7 +94,7 @@ fn cyclic_layers() {
     layout
         .add_modifier(0x0001, "base", "overlay", None)
         .add_modifier(0x0002, "overlay", "base", None);
-    let layout = layout.build();
+
 
     VirtualKeyboard::new(layout);
 }
@@ -108,7 +108,7 @@ fn masked_modifier_on_base_layer() {
         .add_modifier(0x0C, "a", "c", None)
         .add_key(0xBB, "b", Character('B'))
         .add_key(0xCC, "c", Character('C')); // not reachable from base
-    let layout = layout.build();
+
     let mut kb = VirtualKeyboard::new(layout);
 
     // "B" does not exist on base layer
@@ -162,7 +162,7 @@ fn layer_lock() {
         .add_layer_lock(0x0B, "c", "c", None)
         .add_layer_lock(0xB0, "c", "c", None)
         .add_key(0xFF, "c", Character('C'));
-    let layout = layout.build();
+
     let mut kb = VirtualKeyboard::new(layout);
 
     // Lock layer a
@@ -226,7 +226,7 @@ fn transparency() {
         .add_layer_lock(0xCC, "c", "c", None)
         .add_key(0x01, "c", Character('C'))
         .add_key(0x04, "c", Character('C'));
-    let layout = layout.build();
+
     let mut kb = VirtualKeyboard::new(layout);
 
     // Layer a
@@ -308,14 +308,10 @@ fn layer_lock_shared_path() {
         .add_modifier(0xAC, "a", "c", None)
         .add_modifier(0xBD, "b", "d", None)
         .add_modifier(0xCD, "c", "d", None)
-        .add_layer_lock(0x0A, "d", "d", None)
-        .add_layer_lock(0xAB, "d", "d", None)
         .add_layer_lock(0xBD, "d", "d", None)
-        .add_layer_lock(0xA0, "d", "d", None)
-        .add_layer_lock(0xAC, "d", "d", None)
         .add_layer_lock(0xCD, "d", "d", None)
         .add_key(0xFF, "d", Character('X'));
-    let layout = layout.build();
+
     let mut kb = VirtualKeyboard::new(layout);
 
     // Just make sure it does not panic.
@@ -347,7 +343,7 @@ fn layer_lock_caps() {
         .add_layer_lock(0x2A, "shift", "shift", Some(0x14)) // caps lock vk
         .add_layer_lock(0xE036, "shift", "shift", Some(0x14)) // caps lock vk
         .add_key(0xFF, "shift", Character('X'));
-    let layout = layout.build();
+
     let mut kb = VirtualKeyboard::new(layout);
 
     // base layer

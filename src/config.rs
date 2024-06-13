@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use crate::layout::{KeyAction, Layout, LayoutBuilder};
+use crate::layout::{KeyAction, LayoutBuilder};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -44,7 +44,7 @@ impl Config {
         Ok(config)
     }
 
-    pub fn to_layout(&self) -> Layout {
+    pub fn to_layout(&self) -> LayoutBuilder {
         let mut layout_builder = LayoutBuilder::new();
 
         for (layer, mappings) in &self.layers {
@@ -98,7 +98,7 @@ impl Config {
                 }
             }
         }
-        layout_builder.build()
+        layout_builder
     }
 
     pub fn caps_lock_layer(&self) -> Option<&str> {
