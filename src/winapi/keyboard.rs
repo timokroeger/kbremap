@@ -206,7 +206,8 @@ pub fn send_key(key: KeyEvent) {
                             ki: KEYBDINPUT {
                                 wVk: 0,
                                 wScan: c,
-                                dwFlags: KEYEVENTF_UNICODE | if key.up { KEYEVENTF_KEYUP } else { 0 },
+                                dwFlags: KEYEVENTF_UNICODE
+                                    | if key.up { KEYEVENTF_KEYUP } else { 0 },
                                 time: key.time,
                                 dwExtraInfo: 0,
                             },

@@ -1,5 +1,5 @@
 use kbremap::KeyAction::*;
-use kbremap::{Layout, VirtualKeyboard, Error};
+use kbremap::{Error, Layout, VirtualKeyboard};
 
 #[test]
 fn layer_activation() {
