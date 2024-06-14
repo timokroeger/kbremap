@@ -4,22 +4,22 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-use crate::layout::{KeyAction, LayoutBuilder};
+use crate::layout::{KeyAction, Layout};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     caps_lock_layer: Option<String>,
     layers: HashMap<String, Vec<Mapping>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct Mapping {
     scan_code: u16,
     #[serde(flatten)]
     target: MappingTarget,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
 enum MappingTarget {
     Characters {
@@ -44,19 +44,24 @@ impl Config {
         Ok(config)
     }
 
-    pub fn to_layout(&self) -> LayoutBuilder {
-        let mut layout_builder = LayoutBuilder::new();
+    pub fn into_layout(self) -> Layout {
+        let mut layout_builder = Layout::new();
 
-        for (layer, mappings) in &self.layers {
-            layout_builder.add_or_get_layer(layer);
+        let mut layers = HashMap::with_capacity(self.layers.len());
+        let mut layer_mappings = Vec::with_capacity(self.layers.len());
+        for (name, mapping) in self.layers.into_iter() {
+            layers.insert(name.clone(), layout_builder.add_layer(name));
+            layer_mappings.push(mapping);
+        }
 
+        for (layer_idx, mappings) in layers.values().zip(layer_mappings.into_iter()) {
             for mapping in mappings {
-                match &mapping.target {
+                match mapping.target {
                     MappingTarget::Characters { characters } if !characters.is_empty() => {
                         for (i, c) in characters.chars().enumerate() {
                             layout_builder.add_key(
                                 mapping.scan_code + i as u16,
-                                layer,
+                                *layer_idx,
                                 KeyAction::Character(c),
                             );
                         }
@@ -65,7 +70,7 @@ impl Config {
                         for (i, vk) in virtual_keys.iter().enumerate() {
                             layout_builder.add_key(
                                 mapping.scan_code + i as u16,
-                                layer,
+                                *layer_idx,
                                 KeyAction::VirtualKey(*vk),
                             );
                         }
@@ -76,9 +81,9 @@ impl Config {
                     } => {
                         layout_builder.add_modifier(
                             mapping.scan_code,
-                            layer,
-                            target_layer,
-                            *virtual_key,
+                            *layer_idx,
+                            layers[&target_layer],
+                            virtual_key,
                         );
                     }
                     MappingTarget::LayerLock {
@@ -87,13 +92,13 @@ impl Config {
                     } => {
                         layout_builder.add_layer_lock(
                             mapping.scan_code,
-                            layer,
-                            target_layer,
-                            *virtual_key,
+                            *layer_idx,
+                            layers[&target_layer],
+                            virtual_key,
                         );
                     }
                     _ => {
-                        layout_builder.add_key(mapping.scan_code, layer, KeyAction::Ignore);
+                        layout_builder.add_key(mapping.scan_code, *layer_idx, KeyAction::Ignore);
                     }
                 }
             }
