@@ -227,7 +227,7 @@ pub fn send_key(key: KeyEvent) {
 }
 
 fn send_queued_inputs() {
-    let mut queued_inputs = QUEUED_INPUTS.with_borrow_mut(|qi| std::mem::replace(qi, Vec::new()));
+    let mut queued_inputs = QUEUED_INPUTS.with_borrow_mut(|qi| std::mem::take(qi));
 
     if !queued_inputs.is_empty() {
         unsafe {

@@ -99,7 +99,7 @@ impl TryFrom<ReadableConfig> for Config {
                             mapping.scan_code,
                             *layer_idx,
                             layers[target_layer].0,
-                            virtual_key.clone(),
+                            *virtual_key,
                         );
                     }
                     MappingTarget::LayerLock {
@@ -110,7 +110,7 @@ impl TryFrom<ReadableConfig> for Config {
                             mapping.scan_code,
                             *layer_idx,
                             layers[target_layer].0,
-                            virtual_key.clone(),
+                            *virtual_key,
                         );
                     }
                     _ => {
