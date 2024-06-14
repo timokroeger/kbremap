@@ -5,9 +5,7 @@ mod resources;
 mod winapi;
 
 use std::cell::RefCell;
-use std::collections::hash_map::DefaultHasher;
 use std::ffi::{CString, OsStr};
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
@@ -38,7 +36,19 @@ fn config_path(config_file: &OsStr) -> Result<PathBuf> {
     ))
 }
 
-fn register_keyboard_hook(config: &'static Config) -> KeyboardHook<impl FnMut(KeyEvent) -> bool + 'static> {
+fn load_config() -> Result<Config> {
+    let config_file = env::args_os()
+        .nth(1)
+        .unwrap_or_else(|| "config.toml".into());
+    let config_file = config_path(&config_file)?;
+    let config_str = fs::read_to_string(config_file)?;
+    let config: ReadableConfig = toml::from_str(&config_str)?;
+    Ok(Config::try_from(config)?)
+}
+
+fn register_keyboard_hook(
+    config: &'static Config,
+) -> KeyboardHook<impl FnMut(KeyEvent) -> bool + 'static> {
     let mut kb = VirtualKeyboard::new(&config.layout);
 
     KeyboardHook::set(move |mut key_event| {
@@ -103,23 +113,14 @@ fn main() -> Result<()> {
     // Not only checks if we are running from a terminal but also attaches to it.
     let running_in_terminal = winapi::console_check();
 
-    let config_file = env::args_os()
-        .nth(1)
-        .unwrap_or_else(|| "config.toml".into());
-    let config_file = config_path(&config_file)?;
-
     // Prevent duplicate instances if windows re-runs autostarts when rebooting after OS updates.
-    let mut hasher = DefaultHasher::new();
-    env::current_exe()?.hash(&mut hasher);
-    config_file.hash(&mut hasher);
-    let instance_key = CString::new(format!("kbremap-{:016x}", hasher.finish())).unwrap();
+    let current_exe = env::current_exe()?;
+    let instance_key = CString::new(current_exe.to_string_lossy().as_bytes())?;
     if !winapi::register_instance(&instance_key) {
         return Err(anyhow!("already running with the same configuration"));
     }
 
-    let config_str = fs::read_to_string(config_file)?;
-    let config: ReadableConfig = toml::from_str(&config_str)?;
-    let config = Config::try_from(config)?;
+    let config = load_config()?;
     let config = Box::leak(Box::new(config));
 
     let kbhook = &RefCell::new(Some(register_keyboard_hook(config)));

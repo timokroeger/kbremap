@@ -11,16 +11,14 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 pub fn register_instance(name: &CStr) -> bool {
     unsafe {
         let handle = CreateMutexA(ptr::null(), 0, name.as_ptr().cast());
-        assert_ne!(handle, 0);
-
-        if GetLastError() != ERROR_ALREADY_EXISTS {
+        if handle == 0 && GetLastError() == ERROR_ALREADY_EXISTS {
+            CloseHandle(handle);
+            false
+        } else {
             // Intentionally leak the mutex object to protect this instance
             // of the process.
-            return true;
+            true
         }
-
-        CloseHandle(handle);
-        false
     }
 }
 
