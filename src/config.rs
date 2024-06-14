@@ -59,22 +59,20 @@ impl TryFrom<ReadableConfig> for Config {
     fn try_from(config: ReadableConfig) -> Result<Self, Self::Error> {
         let mut layout = Layout::new();
 
-        let mut layers = HashMap::with_capacity(config.layers.len());
-        let mut layer_mappings = Vec::with_capacity(config.layers.len());
-        for (name, mapping) in config.layers.into_iter() {
-            layers.insert(name.clone(), layout.add_layer(name));
-            layer_mappings.push(mapping);
-        }
-
         if let Some(caps_lock_layer) = &config.caps_lock_layer {
-            if !layers.contains_key(caps_lock_layer) {
+            if !config.layers.contains_key(caps_lock_layer) {
                 return Err(ConfigError::InvalidCapsLockLayer);
             }
         }
 
-        for (layer_idx, mappings) in layers.values().zip(layer_mappings.into_iter()) {
+        let mut layers = HashMap::with_capacity(config.layers.len());
+        for (name, mapping) in config.layers.into_iter() {
+            layers.insert(name.clone(), (layout.add_layer(name), mapping));
+        }
+
+        for (layer_idx, mappings) in layers.values() {
             for mapping in mappings {
-                match mapping.target {
+                match &mapping.target {
                     MappingTarget::Characters { characters } if !characters.is_empty() => {
                         for (i, c) in characters.chars().enumerate() {
                             layout.add_key(
@@ -100,8 +98,8 @@ impl TryFrom<ReadableConfig> for Config {
                         layout.add_modifier(
                             mapping.scan_code,
                             *layer_idx,
-                            layers[&target_layer],
-                            virtual_key,
+                            layers[target_layer].0,
+                            virtual_key.clone(),
                         );
                     }
                     MappingTarget::LayerLock {
@@ -111,8 +109,8 @@ impl TryFrom<ReadableConfig> for Config {
                         layout.add_layer_lock(
                             mapping.scan_code,
                             *layer_idx,
-                            layers[&target_layer],
-                            virtual_key,
+                            layers[target_layer].0,
+                            virtual_key.clone(),
                         );
                     }
                     _ => {
