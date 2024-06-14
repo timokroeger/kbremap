@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use petgraph::graph::NodeIndex;
 use petgraph::{algo, Directed, Graph};
+use thiserror::Error;
 
 /// Action associated with the key. Returned by the user provided hook callback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +39,14 @@ pub struct Layout {
 
     /// Active layer when no modifier is pressed.
     pub(crate) base_layer: LayerIdx,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum Error {
+    #[error("empty configuration: atleast one layer must be defined")]
+    EmptyConfiguration,
+    #[error("cycle in layer graph")]
+    CycleInGraph,
 }
 
 impl Layout {
@@ -114,10 +123,11 @@ impl Layout {
         }
     }
 
-    pub fn finalize(&mut self) {
+    pub fn finalize(&mut self) -> Result<(), Error> {
         self.base_layer = *algo::toposort(&self.layer_graph, None)
-            .expect("cycle in layer graph")
+            .map_err(|_| Error::CycleInGraph)?
             .first()
-            .unwrap_or(&NodeIndex::new(0));
+            .ok_or(Error::EmptyConfiguration)?;
+        Ok(())
     }
 }

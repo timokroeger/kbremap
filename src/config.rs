@@ -3,23 +3,24 @@
 use std::collections::HashMap;
 
 use serde::Deserialize;
+use thiserror::Error;
 
-use crate::layout::{KeyAction, Layout};
+use crate::layout::{self, KeyAction, Layout};
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct Config {
+#[derive(Debug, Deserialize)]
+pub struct ReadableConfig {
     caps_lock_layer: Option<String>,
     layers: HashMap<String, Vec<Mapping>>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 struct Mapping {
     scan_code: u16,
     #[serde(flatten)]
     target: MappingTarget,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum MappingTarget {
     Characters {
@@ -38,20 +39,37 @@ enum MappingTarget {
     },
 }
 
-impl Config {
-    pub fn from_toml(config_str: &str) -> Result<Config, toml::de::Error> {
-        let config = toml::from_str(config_str)?;
-        Ok(config)
-    }
+#[derive(Debug)]
+pub struct Config {
+    pub caps_lock_layer: Option<String>,
+    pub layout: Layout,
+}
 
-    pub fn into_layout(self) -> Layout {
-        let mut layout_builder = Layout::new();
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("caps lock layer not found")]
+    InvalidCapsLockLayer,
+    #[error("layout")]
+    Layout(#[from] layout::Error),
+}
 
-        let mut layers = HashMap::with_capacity(self.layers.len());
-        let mut layer_mappings = Vec::with_capacity(self.layers.len());
-        for (name, mapping) in self.layers.into_iter() {
-            layers.insert(name.clone(), layout_builder.add_layer(name));
+impl TryFrom<ReadableConfig> for Config {
+    type Error = ConfigError;
+
+    fn try_from(config: ReadableConfig) -> Result<Self, Self::Error> {
+        let mut layout = Layout::new();
+
+        let mut layers = HashMap::with_capacity(config.layers.len());
+        let mut layer_mappings = Vec::with_capacity(config.layers.len());
+        for (name, mapping) in config.layers.into_iter() {
+            layers.insert(name.clone(), layout.add_layer(name));
             layer_mappings.push(mapping);
+        }
+
+        if let Some(caps_lock_layer) = &config.caps_lock_layer {
+            if !layers.contains_key(caps_lock_layer) {
+                return Err(ConfigError::InvalidCapsLockLayer);
+            }
         }
 
         for (layer_idx, mappings) in layers.values().zip(layer_mappings.into_iter()) {
@@ -59,7 +77,7 @@ impl Config {
                 match mapping.target {
                     MappingTarget::Characters { characters } if !characters.is_empty() => {
                         for (i, c) in characters.chars().enumerate() {
-                            layout_builder.add_key(
+                            layout.add_key(
                                 mapping.scan_code + i as u16,
                                 *layer_idx,
                                 KeyAction::Character(c),
@@ -68,7 +86,7 @@ impl Config {
                     }
                     MappingTarget::VirtualKeys { virtual_keys } if !virtual_keys.is_empty() => {
                         for (i, vk) in virtual_keys.iter().enumerate() {
-                            layout_builder.add_key(
+                            layout.add_key(
                                 mapping.scan_code + i as u16,
                                 *layer_idx,
                                 KeyAction::VirtualKey(*vk),
@@ -79,7 +97,7 @@ impl Config {
                         layer: target_layer,
                         virtual_key,
                     } => {
-                        layout_builder.add_modifier(
+                        layout.add_modifier(
                             mapping.scan_code,
                             *layer_idx,
                             layers[&target_layer],
@@ -90,7 +108,7 @@ impl Config {
                         layer_lock: target_layer,
                         virtual_key,
                     } => {
-                        layout_builder.add_layer_lock(
+                        layout.add_layer_lock(
                             mapping.scan_code,
                             *layer_idx,
                             layers[&target_layer],
@@ -98,15 +116,16 @@ impl Config {
                         );
                     }
                     _ => {
-                        layout_builder.add_key(mapping.scan_code, *layer_idx, KeyAction::Ignore);
+                        layout.add_key(mapping.scan_code, *layer_idx, KeyAction::Ignore);
                     }
                 }
             }
         }
-        layout_builder
-    }
+        layout.finalize()?;
 
-    pub fn caps_lock_layer(&self) -> Option<&str> {
-        self.caps_lock_layer.as_deref()
+        Ok(Self {
+            caps_lock_layer: config.caps_lock_layer,
+            layout,
+        })
     }
 }

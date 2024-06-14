@@ -1,5 +1,5 @@
 use kbremap::KeyAction::*;
-use kbremap::{Layout, VirtualKeyboard};
+use kbremap::{Layout, VirtualKeyboard, Error};
 
 #[test]
 fn layer_activation() {
@@ -15,9 +15,9 @@ fn layer_activation() {
     layout.add_key(0x20, a, Character('1'));
     layout.add_key(0x20, b, Character('2'));
     layout.add_key(0x20, c, Character('3'));
-    layout.finalize();
+    layout.finalize().unwrap();
 
-    let mut kb = VirtualKeyboard::new(layout);
+    let mut kb = VirtualKeyboard::new(&layout);
 
     // L0
     assert_eq!(kb.press_key(0x20), Some(Character('0')));
@@ -83,9 +83,9 @@ fn accidental_shift_lock_issue25() {
     let shift = layout.add_layer(String::from("shift"));
     layout.add_modifier(0x2A, base, shift, Some(0xA0));
     layout.add_modifier(0xE036, base, shift, Some(0xA1));
-    layout.finalize();
+    layout.finalize().unwrap();
 
-    let mut kb = VirtualKeyboard::new(layout);
+    let mut kb = VirtualKeyboard::new(&layout);
 
     assert_eq!(kb.press_key(0xE036), Some(VirtualKey(0xA1)));
     assert_eq!(kb.press_key(0x002A), Some(VirtualKey(0xA0)));
@@ -94,16 +94,15 @@ fn accidental_shift_lock_issue25() {
 }
 
 #[test]
-#[should_panic]
 fn cyclic_layers() {
     let mut layout = Layout::new();
     let base = layout.add_layer(String::from("base"));
     let shift = layout.add_layer(String::from("shift"));
     layout.add_modifier(0x0001, base, shift, None);
     layout.add_modifier(0x0002, shift, base, None);
-    layout.finalize();
+    assert_eq!(layout.finalize().unwrap_err(), Error::CycleInGraph);
 
-    VirtualKeyboard::new(layout);
+    VirtualKeyboard::new(&layout);
 }
 
 #[test]
@@ -118,9 +117,9 @@ fn masked_modifier_on_base_layer() {
     layout.add_modifier(0x0C, a, c, None);
     layout.add_key(0xBB, b, Character('B'));
     layout.add_key(0xCC, c, Character('C')); // not reachable from base
-    layout.finalize();
+    layout.finalize().unwrap();
 
-    let mut kb = VirtualKeyboard::new(layout);
+    let mut kb = VirtualKeyboard::new(&layout);
 
     // "B" does not exist on base layer
     assert_eq!(kb.press_key(0xBB), None);
@@ -176,9 +175,9 @@ fn layer_lock() {
     layout.add_layer_lock(0x0B, c, c, None);
     layout.add_layer_lock(0xB0, c, c, None);
     layout.add_key(0xFF, c, Character('C'));
-    layout.finalize();
+    layout.finalize().unwrap();
 
-    let mut kb = VirtualKeyboard::new(layout);
+    let mut kb = VirtualKeyboard::new(&layout);
 
     // Lock layer a
     assert_eq!(kb.press_key(0x0A), Some(Ignore));
@@ -243,9 +242,9 @@ fn transparency() {
     layout.add_layer_lock(0xCC, c, c, None);
     layout.add_key(0x01, c, Character('C'));
     layout.add_key(0x04, c, Character('C'));
-    layout.finalize();
+    layout.finalize().unwrap();
 
-    let mut kb = VirtualKeyboard::new(layout);
+    let mut kb = VirtualKeyboard::new(&layout);
 
     // Layer a
     assert_eq!(kb.press_key(0x01), Some(Character('A')));
@@ -333,9 +332,9 @@ fn layer_lock_shared_path() {
     layout.add_layer_lock(0xBD, d, d, None);
     layout.add_layer_lock(0xCD, d, d, None);
     layout.add_key(0xFF, d, Character('X'));
-    layout.finalize();
+    layout.finalize().unwrap();
 
-    let mut kb = VirtualKeyboard::new(layout);
+    let mut kb = VirtualKeyboard::new(&layout);
 
     // Just make sure it does not panic.
     kb.press_key(0x0A);
@@ -367,9 +366,9 @@ fn layer_lock_caps() {
     layout.add_layer_lock(0x2A, shift, shift, Some(0x14)); // caps lock vk
     layout.add_layer_lock(0xE036, shift, shift, Some(0x14)); // caps lock vk
     layout.add_key(0xFF, shift, Character('X'));
-    layout.finalize();
+    layout.finalize().unwrap();
 
-    let mut kb = VirtualKeyboard::new(layout);
+    let mut kb = VirtualKeyboard::new(&layout);
 
     // base layer
     assert_eq!(kb.press_key(0xFF), Some(Character('x')));
@@ -400,4 +399,10 @@ fn layer_lock_caps() {
     // base layer
     assert_eq!(kb.press_key(0xFF), Some(Character('x')));
     assert_eq!(kb.release_key(0xFF), Some(Character('x')));
+}
+
+#[test]
+fn empty_configuration() {
+    let mut layout = Layout::new();
+    assert_eq!(layout.finalize().unwrap_err(), Error::EmptyConfiguration);
 }

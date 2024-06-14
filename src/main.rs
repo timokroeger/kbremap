@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use anyhow::{anyhow, Context, Result};
-use kbremap::{Config, KeyAction, Layout, VirtualKeyboard};
+use kbremap::{Config, KeyAction, ReadableConfig, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use winmsg_executor::{quit_message_loop, run_message_loop_with_dispatcher};
@@ -38,12 +38,9 @@ fn config_path(config_file: &OsStr) -> Result<PathBuf> {
     ))
 }
 
-fn register_keyboard_hook(
-    layout: &Layout,
-    config: &Config,
-) -> KeyboardHook<impl FnMut(KeyEvent) -> bool + 'static> {
-    let mut kb = VirtualKeyboard::new(layout.clone());
-    let config_caps_lock_layer = config.caps_lock_layer().map(String::from);
+fn register_keyboard_hook(config: &'static Config) -> KeyboardHook<impl FnMut(KeyEvent) -> bool + 'static> {
+    let mut kb = VirtualKeyboard::new(&config.layout);
+
     KeyboardHook::set(move |mut key_event| {
         let remap = if key_event.up {
             kb.release_key(key_event.scan_code)
@@ -53,7 +50,7 @@ fn register_keyboard_hook(
 
         // Special caps lock handling:
         // Make sure the caps lock state stays in sync with the configured layer.
-        if let Some(caps_lock_layer) = &config_caps_lock_layer {
+        if let Some(caps_lock_layer) = &config.caps_lock_layer {
             if (kb.locked_layer() == caps_lock_layer) != winapi::caps_lock_enabled() {
                 winapi::send_key(KeyEvent {
                     up: false,
@@ -121,10 +118,11 @@ fn main() -> Result<()> {
     }
 
     let config_str = fs::read_to_string(config_file)?;
-    let config = Config::from_toml(&config_str)?;
-    let layout = config.clone().into_layout();
+    let config: ReadableConfig = toml::from_str(&config_str)?;
+    let config = Config::try_from(config)?;
+    let config = Box::leak(Box::new(config));
 
-    let kbhook = &RefCell::new(Some(register_keyboard_hook(&layout, &config)));
+    let kbhook = &RefCell::new(Some(register_keyboard_hook(config)));
 
     // UI code
 
@@ -149,7 +147,7 @@ fn main() -> Result<()> {
             *kbhook = None;
             tray_icon.set_icon(icon_disabled.0);
         } else {
-            *kbhook = Some(register_keyboard_hook(&layout, &config));
+            *kbhook = Some(register_keyboard_hook(config));
             tray_icon.set_icon(icon_enabled.0);
         }
     };

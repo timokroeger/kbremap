@@ -11,7 +11,7 @@ use crate::{LayerGraph, LayerIdx, ScanCode};
 /// Collection of virtual keyboard layers and logic to switch between them
 /// depending on which modifier keys are pressed.
 #[derive(Debug)]
-pub struct VirtualKeyboard {
+pub struct VirtualKeyboard<'l> {
     /// Active layer graph to figure out which layer is active.
     active_layer_graph: LayerGraph,
 
@@ -34,12 +34,12 @@ pub struct VirtualKeyboard {
 
     /// Immutable information about the layout. Used to re-build the active
     /// layer graph when a new layer is locked.
-    layout: Layout,
+    layout: &'l Layout,
 }
 
-impl VirtualKeyboard {
+impl<'l> VirtualKeyboard<'l> {
     /// Create a new virtual keyboard with `layout`.
-    pub fn new(layout: Layout) -> Self {
+    pub fn new(layout: &'l Layout) -> Self {
         Self {
             active_layer_graph: layout.layer_graph.clone(),
             locked_layer: layout.base_layer,
