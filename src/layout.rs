@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use petgraph::graph::NodeIndex;
+use petgraph::visit::EdgeRef;
 use petgraph::{algo, Directed, Graph};
 use thiserror::Error;
 
@@ -124,6 +125,16 @@ impl Layout {
     }
 
     pub fn finalize(&mut self) -> Result<(), Error> {
+        // Find unreacable layers by removing all nodes(=layers) referenced by edges(=modifiers).
+        let mut unreachable_layers: HashSet<usize> = HashSet::from_iter(0..self.layer_graph.node_count());
+        for edge in self.layer_graph.edge_references() {
+            unreachable_layers.remove(&edge.source().index());
+            unreachable_layers.remove(&edge.target().index());
+        }
+        for unreachable_layer in unreachable_layers {
+            self.layer_graph.remove_node(NodeIndex::new(unreachable_layer));
+        }
+
         self.base_layer = *algo::toposort(&self.layer_graph, None)
             .map_err(|_| Error::CycleInGraph)?
             .first()
