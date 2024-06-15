@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 /// Action associated with the key. Returned by the user provided hook callback.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyAction {
     /// Do not forward or send a key action.
     Ignore,
@@ -19,7 +21,7 @@ pub type LayerIdx = u8;
 
 const INVALID_LAYER_IDX: LayerIdx = LayerIdx::MAX;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layout {
     /// Key action for all keys including modifiers and locks.
     keymap: HashMap<(LayerIdx, ScanCode), KeyAction>,

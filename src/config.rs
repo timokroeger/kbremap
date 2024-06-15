@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::layout::{KeyAction, Layout};
@@ -37,7 +37,7 @@ enum MappingTarget {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub caps_lock_layer: Option<String>,
     pub layout: Layout,
