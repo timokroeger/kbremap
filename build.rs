@@ -1,6 +1,14 @@
 #[path = "src/resources.rs"]
 mod resources;
 
+#[cfg(not(feature = "runtime-config"))]
+#[path = "src/config.rs"]
+mod config;
+
+#[cfg(not(feature = "runtime-config"))]
+#[path = "src/layout.rs"]
+mod layout;
+
 use std::env;
 
 use resources::*;
@@ -54,4 +62,25 @@ fn main() {
         )
         .compile()
         .unwrap();
+
+    #[cfg(not(feature = "runtime-config"))]
+    {
+        use config::{Config, ReadableConfig};
+        use std::{
+            fs::{self, File},
+            io::Write,
+            path::PathBuf,
+        };
+
+        let config_str = fs::read_to_string("config.toml").unwrap();
+        let config: ReadableConfig = toml::from_str(&config_str).unwrap();
+        let config = Config::try_from(config).unwrap();
+        let config = postcard::to_stdvec(&config).unwrap();
+
+        let out_dir = &PathBuf::from(env::var_os("OUT_DIR").unwrap());
+        File::create(out_dir.join("config.bin"))
+            .unwrap()
+            .write_all(&config)
+            .unwrap();
+    }
 }

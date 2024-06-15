@@ -5,45 +5,50 @@ mod resources;
 mod winapi;
 
 use std::cell::RefCell;
-use std::ffi::{CString, OsStr};
-use std::path::{Path, PathBuf};
-use std::{env, fs};
+use std::env;
+use std::ffi::CString;
 
-use anyhow::{anyhow, Context, Result};
-use kbremap::{Config, KeyAction, ReadableConfig, VirtualKeyboard};
+use anyhow::{anyhow, Result};
+use kbremap::{Config, KeyAction, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use winmsg_executor::{quit_message_loop, run_message_loop_with_dispatcher};
 
 use crate::winapi::{AutoStartEntry, Icon, KeyEvent, KeyType, KeyboardHook, PopupMenu, TrayIcon};
 
-fn config_path(config_file: &OsStr) -> Result<PathBuf> {
-    let mut path_buf;
-    let mut config_file = Path::new(config_file);
+#[cfg(feature = "runtime-config")]
+fn load_config() -> Result<Config> {
+    use anyhow::Context;
+
+    let config_file = env::args_os()
+        .nth(1)
+        .unwrap_or_else(|| "config.toml".into());
+
+    let mut config_file = std::path::PathBuf::from(config_file);
 
     // Could not find the configuration file in current working directory.
     // Check if a config file with same name exists next to our executable.
     if !config_file.exists() && config_file.is_relative() {
-        path_buf = env::current_exe()?;
-        path_buf.pop();
-        path_buf.push(config_file);
-        config_file = path_buf.as_path();
+        let mut new_config = env::current_exe()?;
+        new_config.pop();
+        new_config.push(config_file);
+        config_file = new_config;
     }
 
     config_file.canonicalize().context(format!(
         "Cannot load configuration {}",
         config_file.display()
-    ))
+    ))?;
+
+    let config_str = std::fs::read_to_string(config_file)?;
+    let config: kbremap::ReadableConfig = toml::from_str(&config_str)?;
+    Ok(Config::try_from(config)?)
 }
 
+#[cfg(not(feature = "runtime-config"))]
 fn load_config() -> Result<Config> {
-    let config_file = env::args_os()
-        .nth(1)
-        .unwrap_or_else(|| "config.toml".into());
-    let config_file = config_path(&config_file)?;
-    let config_str = fs::read_to_string(config_file)?;
-    let config: ReadableConfig = toml::from_str(&config_str)?;
-    Ok(Config::try_from(config)?)
+    let config_bin = include_bytes!(concat!(env!("OUT_DIR"), "/config.bin"));
+    Ok(postcard::from_bytes(config_bin)?)
 }
 
 fn register_keyboard_hook(
@@ -117,7 +122,7 @@ fn main() -> Result<()> {
     let current_exe = env::current_exe()?;
     let instance_key = CString::new(current_exe.to_string_lossy().as_bytes())?;
     if !winapi::register_instance(&instance_key) {
-        return Err(anyhow!("already running with the same configuration"));
+        return Err(anyhow!("already running"));
     }
 
     let config = load_config()?;

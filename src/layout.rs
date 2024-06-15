@@ -3,10 +3,11 @@ use std::collections::{HashMap, HashSet};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::{algo, Directed, Graph};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Action associated with the key. Returned by the user provided hook callback.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyAction {
     /// Do not forward or send a key action.
     Ignore,
@@ -23,7 +24,7 @@ pub type ScanCode = u16;
 pub type LayerGraph = Graph<String, Vec<ScanCode>, Directed, u8>;
 pub type LayerIdx = NodeIndex<u8>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layout {
     /// Key action for all keys including modifiers and locks.
     pub(crate) keymap: HashMap<(LayerIdx, ScanCode), KeyAction>,
