@@ -39,7 +39,7 @@ base = [
     # Ignores the original scan code if no `virtual_key` is specified.
     { scan_code = 0x2A,   layer = "shift", virtual_key = 0xA0 }, # left shift
     { scan_code = 0xE036, layer = "shift", virtual_key = 0xA1 }, # right shift
-    { scan_code = 0x3A,   layer_lock = "shift" }, # caps lock
+    { scan_code = 0x3A,   lock = "shift" }, # caps lock
 
     # The `virtual_keys` works similar to the `characters` target but takes a collection of virtual keys.
     # An empty target can be used to ignore scan codes.

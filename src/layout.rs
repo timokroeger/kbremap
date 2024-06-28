@@ -79,37 +79,13 @@ impl Layout {
         self.layer_graph[edge_idx].push(scan_code);
     }
 
-    pub fn add_modifier(
-        &mut self,
-        scan_code: ScanCode,
-        layer: LayerIdx,
-        target_layer: LayerIdx,
-        vk: Option<u8>,
-    ) {
-        self.add_key(
-            scan_code,
-            layer,
-            vk.map_or_else(|| KeyAction::Ignore, KeyAction::VirtualKey),
-        );
-
+    pub fn add_modifier(&mut self, scan_code: ScanCode, layer: LayerIdx, target_layer: LayerIdx) {
         // Add modifiers as edges to the graph.
         self.modifier_scan_codes.insert(scan_code);
         self.add_edge_scan_code(scan_code, layer, target_layer);
     }
 
-    pub fn add_layer_lock(
-        &mut self,
-        scan_code: ScanCode,
-        layer: LayerIdx,
-        target_layer: LayerIdx,
-        vk: Option<u8>,
-    ) {
-        self.add_key(
-            scan_code,
-            layer,
-            vk.map_or_else(|| KeyAction::Ignore, KeyAction::VirtualKey),
-        );
-
+    pub fn add_layer_lock(&mut self, scan_code: ScanCode, layer: LayerIdx, target_layer: LayerIdx) {
         self.locks.insert((layer, scan_code), target_layer);
 
         // Treat locks as modifier so that they change to the target layer on key press

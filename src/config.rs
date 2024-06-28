@@ -30,11 +30,8 @@ enum MappingTarget {
         virtual_keys: Vec<u8>,
     },
     Layer {
-        layer: String,
-        virtual_key: Option<u8>,
-    },
-    LayerLock {
-        layer_lock: String,
+        layer: Option<String>,
+        lock: Option<String>,
         virtual_key: Option<u8>,
     },
 }
@@ -93,24 +90,29 @@ impl TryFrom<ReadableConfig> for Config {
                     }
                     MappingTarget::Layer {
                         layer: target_layer,
+                        lock: lock_layer,
                         virtual_key,
                     } => {
-                        layout.add_modifier(
+                        if let Some(target_layer) = target_layer {
+                            layout.add_modifier(
+                                mapping.scan_code,
+                                *layer_idx,
+                                layers[target_layer].0,
+                            );
+                        }
+
+                        if let Some(lock_layer) = lock_layer {
+                            layout.add_layer_lock(
+                                mapping.scan_code,
+                                *layer_idx,
+                                layers[lock_layer].0,
+                            );
+                        }
+
+                        layout.add_key(
                             mapping.scan_code,
                             *layer_idx,
-                            layers[target_layer].0,
-                            *virtual_key,
-                        );
-                    }
-                    MappingTarget::LayerLock {
-                        layer_lock: target_layer,
-                        virtual_key,
-                    } => {
-                        layout.add_layer_lock(
-                            mapping.scan_code,
-                            *layer_idx,
-                            layers[target_layer].0,
-                            *virtual_key,
+                            virtual_key.map_or_else(|| KeyAction::Ignore, KeyAction::VirtualKey),
                         );
                     }
                     _ => {

@@ -32,8 +32,8 @@ caps_lock_layer = "2_shift"
     { scan_code = 0x1E, characters = "UIAEOSNRTDY" },
     { scan_code = 0x2C, characters = "ÜÖÄPZBM–•J" },
     # Layer modifiers
-    { scan_code = 0x2A, layer_lock = "2_shift" }, # left shift
-    { scan_code = 0xE036, layer_lock = "2_shift" }, # right shift
+    { scan_code = 0x2A, lock = "2_shift" }, # left shift
+    { scan_code = 0xE036, lock = "2_shift" }, # right shift
     { scan_code = 0x3A, layer = "5_greek" }, # caps lock
     { scan_code = 0x2B, layer = "5_greek" }, # `\` on US layout, `#` key on german layout
 ]
@@ -74,8 +74,8 @@ caps_lock_layer = "2_shift"
     { scan_code = 0x35, characters = ";" },
     { scan_code = 0x39, virtual_keys = [0x60] },
     # Layer modifiers
-    { scan_code = 0x56, layer_lock = "4_navigation_numpad" }, # `>` on german layout
-    { scan_code = 0xE038, layer_lock = "4_navigation_numpad" }, # `right alt` US layout, `Alt Gr` on german layout
+    { scan_code = 0x56, lock = "4_navigation_numpad" }, # `>` on german layout
+    { scan_code = 0xE038, lock = "4_navigation_numpad" }, # `right alt` US layout, `Alt Gr` on german layout
     { scan_code = 0x3A, layer = "6_greek" }, # caps lock
     { scan_code = 0x2B, layer = "6_greek" }, # `\` on US layout, `#` key on german layout
 ]
