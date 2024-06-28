@@ -18,11 +18,11 @@ pub struct VirtualKeyboard<'l> {
 
     /// Keeps track of all pressed keys so that we always can send the matching
     /// action after key release, even when the layer has changed.
-    /// Chronologically ordered to find the active layer.
+    /// Chronological order is crucial to be able to find the active layer when
+    /// a modifier or lock key is pressed or released.
     pressed_keys: Vec<(ScanCode, Option<KeyAction>)>,
 
-    /// Immutable information about the layout. Used to re-build the active
-    /// layer graph when a new layer is locked.
+    /// Immutable information about the layout.
     layout: &'l Layout,
 }
 

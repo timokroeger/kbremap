@@ -10,7 +10,6 @@ repository = "https://github.com/timokroeger/kbremap"
 [dependencies]
 anyhow = "1.0"
 encode_unicode = "1.0"
-petgraph = { version = "0.6.0", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0.61"
 toml = "0.8.12"

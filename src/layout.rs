@@ -1,9 +1,5 @@
 use std::collections::HashMap;
 
-use petgraph::graph::NodeIndex;
-use petgraph::visit::EdgeRef;
-use petgraph::{Directed, Graph};
-
 /// Action associated with the key. Returned by the user provided hook callback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyAction {
@@ -19,20 +15,23 @@ pub enum KeyAction {
 }
 
 pub type ScanCode = u16;
-type LayerGraph = Graph<String, Vec<ScanCode>, Directed, u8>;
-pub type LayerIdx = NodeIndex<u8>;
+pub type LayerIdx = u8;
+
+const INVALID_LAYER_IDX: LayerIdx = LayerIdx::MAX;
 
 #[derive(Debug, Clone)]
 pub struct Layout {
     /// Key action for all keys including modifiers and locks.
     keymap: HashMap<(LayerIdx, ScanCode), KeyAction>,
 
+    /// Map of keys that change layer when pressed.
+    modifiers: HashMap<(LayerIdx, ScanCode), LayerIdx>,
+
     /// Map of keys that lock a specific layer when pressed.
     locks: HashMap<(LayerIdx, ScanCode), LayerIdx>,
 
-    /// Keyboard layout encoded as graph where layers are the nodes and
-    /// modifiers (layer change keys) are the egdes.
-    layer_graph: LayerGraph,
+    /// Names of the layers.
+    layer_names: Vec<String>,
 
     /// Active layer when no modifier is pressed.
     base_layer: LayerIdx,
@@ -42,15 +41,16 @@ impl Layout {
     pub fn new() -> Self {
         Self {
             keymap: HashMap::new(),
+            modifiers: HashMap::new(),
             locks: HashMap::new(),
-            layer_graph: LayerGraph::default(),
-            base_layer: LayerIdx::end(),
+            layer_names: Vec::new(),
+            base_layer: INVALID_LAYER_IDX,
         }
     }
 
     pub fn add_layer(&mut self, name: String) -> LayerIdx {
-        let layer_idx = self.layer_graph.add_node(name);
-        assert!(layer_idx != LayerIdx::end(), "to many layers");
+        let layer_idx = self.layer_names.len().try_into().expect("too many layers");
+        self.layer_names.push(name);
         layer_idx
     }
 
@@ -62,17 +62,8 @@ impl Layout {
         self.keymap.insert((layer, scan_code), action);
     }
 
-    fn add_edge_scan_code(&mut self, scan_code: ScanCode, layer: LayerIdx, target_layer: LayerIdx) {
-        let edge_idx = self
-            .layer_graph
-            .find_edge(layer, target_layer)
-            .unwrap_or_else(|| self.layer_graph.add_edge(layer, target_layer, Vec::new()));
-        self.layer_graph[edge_idx].push(scan_code);
-    }
-
     pub fn add_modifier(&mut self, scan_code: ScanCode, layer: LayerIdx, target_layer: LayerIdx) {
-        // Add modifiers as edges to the graph.
-        self.add_edge_scan_code(scan_code, layer, target_layer);
+        self.modifiers.insert((layer, scan_code), target_layer);
     }
 
     pub fn add_layer_lock(&mut self, scan_code: ScanCode, layer: LayerIdx, target_layer: LayerIdx) {
@@ -80,11 +71,11 @@ impl Layout {
     }
 
     pub fn is_valid(&self) -> bool {
-        self.base_layer != LayerIdx::end()
+        self.base_layer != INVALID_LAYER_IDX
     }
 
     pub fn layer_name(&self, layer: LayerIdx) -> &str {
-        &self.layer_graph[layer]
+        &self.layer_names[usize::from(layer)]
     }
 
     pub fn base_layer(&self) -> LayerIdx {
@@ -96,10 +87,7 @@ impl Layout {
     }
 
     pub fn layer_modifier(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx> {
-        self.layer_graph
-            .edges(layer)
-            .filter_map(|edge| edge.weight().contains(&scan_code).then_some(edge.target()))
-            .next()
+        self.modifiers.get(&(layer, scan_code)).copied()
     }
 
     pub fn layer_lock(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx> {
