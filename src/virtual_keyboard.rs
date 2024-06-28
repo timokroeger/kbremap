@@ -1,9 +1,5 @@
 //! Remapping and layer switching logic.
 
-use std::collections::HashMap;
-
-use petgraph::visit::EdgeRef;
-
 use crate::layout::{KeyAction, Layout};
 use crate::{LayerIdx, ScanCode};
 
@@ -20,13 +16,10 @@ pub struct VirtualKeyboard<'l> {
     /// The last element is the index of the currently active layer.
     layer_history: Vec<LayerIdx>,
 
-    /// Chronologically sorted modifier scan codes used to traverse the
-    /// layer graph to determine the active layer.
-    pressed_modifiers: Vec<ScanCode>,
-
     /// Keeps track of all pressed keys so that we always can send the matching
     /// action after key release, even when the layer has changed.
-    pressed_keys: HashMap<ScanCode, Option<KeyAction>>,
+    /// Chronologically ordered to find the active layer.
+    pressed_keys: Vec<(ScanCode, Option<KeyAction>)>,
 
     /// Immutable information about the layout. Used to re-build the active
     /// layer graph when a new layer is locked.
@@ -38,10 +31,9 @@ impl<'l> VirtualKeyboard<'l> {
     pub fn new(layout: &'l Layout) -> Self {
         assert!(layout.is_valid());
         Self {
-            locked_layer: layout.base_layer,
-            layer_history: vec![layout.base_layer],
-            pressed_modifiers: Vec::new(),
-            pressed_keys: HashMap::new(),
+            locked_layer: layout.base_layer(),
+            layer_history: vec![layout.base_layer()],
+            pressed_keys: Vec::new(),
             layout,
         }
     }
@@ -51,24 +43,19 @@ impl<'l> VirtualKeyboard<'l> {
     }
 
     pub fn active_layer(&self) -> &str {
-        &self.layout.layer_graph[self.active_layer_idx()]
+        self.layout.layer_name(self.active_layer_idx())
     }
 
     pub fn locked_layer(&self) -> &str {
-        &self.layout.layer_graph[self.locked_layer]
+        self.layout.layer_name(self.locked_layer)
     }
 
     /// Returns the layer activated by the currently pressed modifier keys.
     fn find_layer_activation(&self, starting_layer: LayerIdx) -> LayerIdx {
         let mut layer = starting_layer;
-        for modifier_scan_code in &self.pressed_modifiers {
-            if let Some(edge) = self
-                .layout
-                .layer_graph
-                .edges(layer)
-                .find(|edge| edge.weight().contains(modifier_scan_code))
-            {
-                layer = edge.target();
+        for (scan_code, _) in &self.pressed_keys {
+            if let Some(target_layer) = self.layout.layer_modifier(layer, *scan_code) {
+                layer = target_layer;
             }
         }
         layer
@@ -110,35 +97,14 @@ impl<'l> VirtualKeyboard<'l> {
         }
 
         self.locked_layer = layer;
-        self.update_layer_history();
     }
 
-    fn press_modifier(&mut self, scan_code: ScanCode) {
-        if self.pressed_modifiers.last() == Some(&scan_code) {
-            // Ignore repeated key presses
-            return;
-        }
-
-        if self.locked_layer == self.layout.base_layer {
-            if let Some(target_layer) = self.layout.locks.get(&(self.active_layer_idx(), scan_code))
-            {
-                self.lock_layer(*target_layer);
-            }
-        } else {
-            // Try to unlock a previously locked layer
-            let active_layer_from_base = self.find_layer_activation(self.layout.base_layer);
-            let layer_to_lock = self.layout.locks.get(&(active_layer_from_base, scan_code));
-            if layer_to_lock == Some(&(self.locked_layer)) {
-                self.lock_layer(self.layout.base_layer);
-            }
-        }
-
-        // In case we missed a modifier release event remove the previous entry
-        // to correct the history of modifier key presses.
-        self.pressed_modifiers
-            .retain(|pressed_scan_code| *pressed_scan_code != scan_code);
-        self.pressed_modifiers.push(scan_code);
-        self.update_layer_history();
+    fn take_pressed(&mut self, scan_code: ScanCode) -> Option<Option<KeyAction>> {
+        let idx = self
+            .pressed_keys
+            .iter()
+            .position(|(sc, _action)| *sc == scan_code)?;
+        Some(self.pressed_keys.remove(idx).1)
     }
 
     /// Returns the key action associated with the scan code press.
@@ -147,36 +113,43 @@ impl<'l> VirtualKeyboard<'l> {
         // send the correct repeated key press or key up event.
         // If we do not track active key presses the key down and key up events
         // may not be the same if the layer has changed in between.
-        let action = self.pressed_keys.remove(&scan_code).unwrap_or_else(|| {
-            // Get the key action from the current layer. If the key is not available on
-            // the current layer, check the previous layer. Repeat until a action was
-            // found or we run out of layers.
-            self.layer_history
-                .iter()
-                .rev()
-                .find_map(|layer| self.layout.keymap.get(&(*layer, scan_code)).copied())
-        });
-
-        if self.layout.modifier_scan_codes.contains(&scan_code) {
-            self.press_modifier(scan_code);
+        if let Some(action) = self.take_pressed(scan_code) {
+            // Re-insert to correct history of pressed modifiers in case we we
+            // missed a modifier release event.
+            self.pressed_keys.push((scan_code, action));
+            return action;
         }
-        self.pressed_keys.insert(scan_code, action);
+
+        // Get the key action from the current layer. If the key is not available on
+        // the current layer, check the previous layer. Repeat until a action was
+        // found or we run out of layers.
+        let action = self
+            .layer_history
+            .iter()
+            .rev()
+            .find_map(|layer| self.layout.action(*layer, scan_code));
+
+        if self.locked_layer == self.layout.base_layer() {
+            if let Some(target_layer) = self.layout.layer_lock(self.active_layer_idx(), scan_code) {
+                self.lock_layer(target_layer);
+            }
+        } else {
+            // Try to unlock a previously locked layer
+            let active_layer_from_base = self.find_layer_activation(self.layout.base_layer());
+            let layer_to_lock = self.layout.layer_lock(active_layer_from_base, scan_code);
+            if layer_to_lock == Some(self.locked_layer) {
+                self.lock_layer(self.layout.base_layer());
+            }
+        }
+
+        self.pressed_keys.push((scan_code, action));
+        self.update_layer_history();
 
         action
     }
 
     /// Returns the key action associated with the scan code release.
     pub fn release_key(&mut self, scan_code: ScanCode) -> Option<KeyAction> {
-        // Release from pressed modifiers if it was one.
-        if let Some(idx) = self
-            .pressed_modifiers
-            .iter()
-            .rposition(|pressed_scan_code| *pressed_scan_code == scan_code)
-        {
-            self.pressed_modifiers.remove(idx);
-            self.update_layer_history();
-        }
-
         // Release the pressed key.
         // If not found in the set of pressed keys forward the release action.
         // Forwarding instead of ignoring is important in following scenario:
@@ -187,6 +160,10 @@ impl<'l> VirtualKeyboard<'l> {
         // 4. release of key key e.g. alt
         // --> If we don ot forward the key release here the alt key is stuck
         //     until it is pressed again.
-        self.pressed_keys.remove(&scan_code).flatten()
+        let presed_key = self.take_pressed(scan_code).flatten();
+
+        self.update_layer_history();
+
+        presed_key
     }
 }

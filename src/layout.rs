@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use petgraph::graph::NodeIndex;
+use petgraph::visit::EdgeRef;
 use petgraph::{Directed, Graph};
 
 /// Action associated with the key. Returned by the user provided hook callback.
@@ -18,26 +19,23 @@ pub enum KeyAction {
 }
 
 pub type ScanCode = u16;
-pub type LayerGraph = Graph<String, Vec<ScanCode>, Directed, u8>;
+type LayerGraph = Graph<String, Vec<ScanCode>, Directed, u8>;
 pub type LayerIdx = NodeIndex<u8>;
 
 #[derive(Debug, Clone)]
 pub struct Layout {
     /// Key action for all keys including modifiers and locks.
-    pub(crate) keymap: HashMap<(LayerIdx, ScanCode), KeyAction>,
+    keymap: HashMap<(LayerIdx, ScanCode), KeyAction>,
 
     /// Map of keys that lock a specific layer when pressed.
-    pub(crate) locks: HashMap<(LayerIdx, ScanCode), LayerIdx>,
-
-    /// Set of scan codes used for layer switching.
-    pub(crate) modifier_scan_codes: HashSet<ScanCode>,
+    locks: HashMap<(LayerIdx, ScanCode), LayerIdx>,
 
     /// Keyboard layout encoded as graph where layers are the nodes and
     /// modifiers (layer change keys) are the egdes.
-    pub(crate) layer_graph: LayerGraph,
+    layer_graph: LayerGraph,
 
     /// Active layer when no modifier is pressed.
-    pub(crate) base_layer: LayerIdx,
+    base_layer: LayerIdx,
 }
 
 impl Layout {
@@ -45,14 +43,9 @@ impl Layout {
         Self {
             keymap: HashMap::new(),
             locks: HashMap::new(),
-            modifier_scan_codes: HashSet::new(),
             layer_graph: LayerGraph::default(),
             base_layer: LayerIdx::end(),
         }
-    }
-
-    pub fn is_valid(&self) -> bool {
-        self.base_layer != LayerIdx::end()
     }
 
     pub fn add_layer(&mut self, name: String) -> LayerIdx {
@@ -79,15 +72,37 @@ impl Layout {
 
     pub fn add_modifier(&mut self, scan_code: ScanCode, layer: LayerIdx, target_layer: LayerIdx) {
         // Add modifiers as edges to the graph.
-        self.modifier_scan_codes.insert(scan_code);
         self.add_edge_scan_code(scan_code, layer, target_layer);
     }
 
     pub fn add_layer_lock(&mut self, scan_code: ScanCode, layer: LayerIdx, target_layer: LayerIdx) {
         self.locks.insert((layer, scan_code), target_layer);
+    }
 
-        // Treat locks as modifier so that they change to the target layer on key press
-        // (before the actual locking happens on key release).
-        self.modifier_scan_codes.insert(scan_code);
+    pub fn is_valid(&self) -> bool {
+        self.base_layer != LayerIdx::end()
+    }
+
+    pub fn layer_name(&self, layer: LayerIdx) -> &str {
+        &self.layer_graph[layer]
+    }
+
+    pub fn base_layer(&self) -> LayerIdx {
+        self.base_layer
+    }
+
+    pub fn action(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<KeyAction> {
+        self.keymap.get(&(layer, scan_code)).copied()
+    }
+
+    pub fn layer_modifier(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx> {
+        self.layer_graph
+            .edges(layer)
+            .filter_map(|edge| edge.weight().contains(&scan_code).then_some(edge.target()))
+            .next()
+    }
+
+    pub fn layer_lock(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx> {
+        self.locks.get(&(layer, scan_code)).copied()
     }
 }

@@ -192,7 +192,6 @@ fn layer_lock() {
 
     layout.add_key(0xFF, c, Character('C'));
 
-
     let mut kb = VirtualKeyboard::new(&layout);
 
     // Lock layer a
