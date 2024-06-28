@@ -1,3 +1,4 @@
+base_layer = "1_base"
 caps_lock_layer = "2_shift"
 
 [layers]

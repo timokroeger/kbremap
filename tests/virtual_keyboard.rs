@@ -1,10 +1,11 @@
 use kbremap::KeyAction::*;
-use kbremap::{Error, Layout, VirtualKeyboard};
+use kbremap::{Layout, VirtualKeyboard};
 
 #[test]
 fn layer_activation() {
     let mut layout = Layout::new();
     let base = layout.add_layer(String::from("base"));
+    layout.set_base_layer(base);
     let a = layout.add_layer(String::from("a"));
     let b = layout.add_layer(String::from("b"));
     let c = layout.add_layer(String::from("c"));
@@ -18,7 +19,6 @@ fn layer_activation() {
     layout.add_key(0x20, a, Character('1'));
     layout.add_key(0x20, b, Character('2'));
     layout.add_key(0x20, c, Character('3'));
-    layout.finalize().unwrap();
 
     let mut kb = VirtualKeyboard::new(&layout);
 
@@ -83,12 +83,12 @@ fn layer_activation() {
 fn accidental_shift_lock_issue25() {
     let mut layout = Layout::new();
     let base = layout.add_layer(String::from("base"));
+    layout.set_base_layer(base);
     let shift = layout.add_layer(String::from("shift"));
     layout.add_modifier(0x2A, base, shift);
     layout.add_key(0x2A, base, VirtualKey(0xA0));
     layout.add_modifier(0xE036, base, shift);
     layout.add_key(0xE036, base, VirtualKey(0xA1));
-    layout.finalize().unwrap();
 
     let mut kb = VirtualKeyboard::new(&layout);
 
@@ -99,23 +99,10 @@ fn accidental_shift_lock_issue25() {
 }
 
 #[test]
-fn cyclic_layers() {
-    let mut layout = Layout::new();
-    let base = layout.add_layer(String::from("base"));
-    let shift = layout.add_layer(String::from("shift"));
-    layout.add_modifier(0x0001, base, shift);
-    layout.add_key(0x0001, base, Ignore);
-    layout.add_modifier(0x0002, shift, base);
-    layout.add_key(0x0002, shift, Ignore);
-    assert_eq!(layout.finalize().unwrap_err(), Error::CycleInGraph);
-
-    VirtualKeyboard::new(&layout);
-}
-
-#[test]
 fn masked_modifier_on_base_layer() {
     let mut layout = Layout::new();
     let base = layout.add_layer(String::from("base"));
+    layout.set_base_layer(base);
     let a = layout.add_layer(String::from("a"));
     let b = layout.add_layer(String::from("b"));
     let c = layout.add_layer(String::from("c"));
@@ -127,7 +114,6 @@ fn masked_modifier_on_base_layer() {
     layout.add_key(0x0C, a, Ignore);
     layout.add_key(0xBB, b, Character('B'));
     layout.add_key(0xCC, c, Character('C')); // not reachable from base
-    layout.finalize().unwrap();
 
     let mut kb = VirtualKeyboard::new(&layout);
 
@@ -162,6 +148,7 @@ fn masked_modifier_on_base_layer() {
 fn layer_lock() {
     let mut layout = Layout::new();
     let base = layout.add_layer(String::from("base"));
+    layout.set_base_layer(base);
     let a = layout.add_layer(String::from("a"));
     let b = layout.add_layer(String::from("b"));
     let c = layout.add_layer(String::from("c"));
@@ -203,7 +190,6 @@ fn layer_lock() {
 
     layout.add_key(0xFF, c, Character('C'));
 
-    layout.finalize().unwrap();
 
     let mut kb = VirtualKeyboard::new(&layout);
 
@@ -258,6 +244,7 @@ fn layer_lock() {
 fn transparency() {
     let mut layout = Layout::new();
     let a = layout.add_layer(String::from("a"));
+    layout.set_base_layer(a);
     let b = layout.add_layer(String::from("b"));
     let c = layout.add_layer(String::from("c"));
 
@@ -274,7 +261,6 @@ fn transparency() {
     layout.add_key(0xCC, c, Ignore);
     layout.add_key(0x01, c, Character('C'));
     layout.add_key(0x04, c, Character('C'));
-    layout.finalize().unwrap();
 
     let mut kb = VirtualKeyboard::new(&layout);
 
@@ -351,6 +337,7 @@ fn transparency() {
 fn layer_lock_shared_path() {
     let mut layout = Layout::new();
     let base = layout.add_layer(String::from("base"));
+    layout.set_base_layer(base);
     let a = layout.add_layer(String::from("a"));
     let b = layout.add_layer(String::from("b"));
     let c = layout.add_layer(String::from("c"));
@@ -371,7 +358,6 @@ fn layer_lock_shared_path() {
     layout.add_layer_lock(0xBD, d, d);
     layout.add_layer_lock(0xCD, d, d);
     layout.add_key(0xFF, d, Character('X'));
-    layout.finalize().unwrap();
 
     let mut kb = VirtualKeyboard::new(&layout);
 
@@ -398,6 +384,7 @@ fn layer_lock_shared_path() {
 fn layer_lock_caps() {
     let mut layout = Layout::new();
     let base = layout.add_layer(String::from("base"));
+    layout.set_base_layer(base);
     let shift = layout.add_layer(String::from("shift"));
 
     layout.add_modifier(0x2A, base, shift);
@@ -414,7 +401,6 @@ fn layer_lock_caps() {
 
     layout.add_key(0xFF, shift, Character('X'));
 
-    layout.finalize().unwrap();
 
     let mut kb = VirtualKeyboard::new(&layout);
 
@@ -451,6 +437,6 @@ fn layer_lock_caps() {
 
 #[test]
 fn empty_configuration() {
-    let mut layout = Layout::new();
-    assert_eq!(layout.finalize().unwrap_err(), Error::EmptyConfiguration);
+    let layout = Layout::new();
+    assert!(!layout.is_valid());
 }

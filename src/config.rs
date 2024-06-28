@@ -5,10 +5,11 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::layout::{self, KeyAction, Layout};
+use crate::layout::{KeyAction, Layout};
 
 #[derive(Debug, Deserialize)]
 pub struct ReadableConfig {
+    base_layer: String,
     caps_lock_layer: Option<String>,
     layers: HashMap<String, Vec<Mapping>>,
 }
@@ -44,10 +45,10 @@ pub struct Config {
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
+    #[error("base layer not found")]
+    InvalidBaseLayer,
     #[error("caps lock layer not found")]
     InvalidCapsLockLayer,
-    #[error("layout")]
-    Layout(#[from] layout::Error),
 }
 
 impl TryFrom<ReadableConfig> for Config {
@@ -56,6 +57,10 @@ impl TryFrom<ReadableConfig> for Config {
     fn try_from(config: ReadableConfig) -> Result<Self, Self::Error> {
         let mut layout = Layout::new();
 
+        if !config.layers.contains_key(&config.base_layer) {
+            return Err(ConfigError::InvalidBaseLayer);
+        }
+
         if let Some(caps_lock_layer) = &config.caps_lock_layer {
             if !config.layers.contains_key(caps_lock_layer) {
                 return Err(ConfigError::InvalidCapsLockLayer);
@@ -63,8 +68,13 @@ impl TryFrom<ReadableConfig> for Config {
         }
 
         let mut layers = HashMap::with_capacity(config.layers.len());
+
         for (name, mapping) in config.layers.into_iter() {
-            layers.insert(name.clone(), (layout.add_layer(name), mapping));
+            let layer_idx = layout.add_layer(name.clone());
+            if name == config.base_layer {
+                layout.set_base_layer(layer_idx);
+            }
+            layers.insert(name, (layer_idx, mapping));
         }
 
         for (layer_idx, mappings) in layers.values() {
@@ -121,7 +131,6 @@ impl TryFrom<ReadableConfig> for Config {
                 }
             }
         }
-        layout.finalize()?;
 
         Ok(Self {
             caps_lock_layer: config.caps_lock_layer,

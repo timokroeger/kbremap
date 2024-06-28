@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use petgraph::graph::NodeIndex;
-use petgraph::visit::EdgeRef;
-use petgraph::{algo, Directed, Graph};
-use thiserror::Error;
+use petgraph::{Directed, Graph};
 
 /// Action associated with the key. Returned by the user provided hook callback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,14 +40,6 @@ pub struct Layout {
     pub(crate) base_layer: LayerIdx,
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum Error {
-    #[error("empty configuration: atleast one layer must be defined")]
-    EmptyConfiguration,
-    #[error("cycle in layer graph")]
-    CycleInGraph,
-}
-
 impl Layout {
     pub fn new() -> Self {
         Self {
@@ -61,10 +51,18 @@ impl Layout {
         }
     }
 
+    pub fn is_valid(&self) -> bool {
+        self.base_layer != LayerIdx::end()
+    }
+
     pub fn add_layer(&mut self, name: String) -> LayerIdx {
         let layer_idx = self.layer_graph.add_node(name);
         assert!(layer_idx != LayerIdx::end(), "to many layers");
         layer_idx
+    }
+
+    pub fn set_base_layer(&mut self, layer: LayerIdx) {
+        self.base_layer = layer;
     }
 
     pub fn add_key(&mut self, scan_code: ScanCode, layer: LayerIdx, action: KeyAction) {
@@ -98,25 +96,5 @@ impl Layout {
         if layer != target_layer {
             self.add_edge_scan_code(scan_code, layer, target_layer);
         }
-    }
-
-    pub fn finalize(&mut self) -> Result<(), Error> {
-        // Find unreacable layers by removing all nodes(=layers) referenced by edges(=modifiers).
-        let mut unreachable_layers: HashSet<usize> =
-            HashSet::from_iter(0..self.layer_graph.node_count());
-        for edge in self.layer_graph.edge_references() {
-            unreachable_layers.remove(&edge.source().index());
-            unreachable_layers.remove(&edge.target().index());
-        }
-        for unreachable_layer in unreachable_layers {
-            self.layer_graph
-                .remove_node(NodeIndex::new(unreachable_layer));
-        }
-
-        self.base_layer = *algo::toposort(&self.layer_graph, None)
-            .map_err(|_| Error::CycleInGraph)?
-            .first()
-            .ok_or(Error::EmptyConfiguration)?;
-        Ok(())
     }
 }

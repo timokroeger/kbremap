@@ -40,6 +40,7 @@ pub struct VirtualKeyboard<'l> {
 impl<'l> VirtualKeyboard<'l> {
     /// Create a new virtual keyboard with `layout`.
     pub fn new(layout: &'l Layout) -> Self {
+        assert!(layout.is_valid());
         Self {
             active_layer_graph: layout.layer_graph.clone(),
             locked_layer: layout.base_layer,

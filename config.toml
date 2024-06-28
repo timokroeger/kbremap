@@ -1,5 +1,7 @@
 # Example Dvorak layout configuration with comments.
 
+base_layer = "base"
+
 # Associates the caps lock key and indicator light with a layer.
 # Especially useful when the caps lock key is remapped and you accidentally use it
 # from a program running with admin rights (where kbremap does not work).
