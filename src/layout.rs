@@ -89,12 +89,5 @@ impl Layout {
         // Treat locks as modifier so that they change to the target layer on key press
         // (before the actual locking happens on key release).
         self.modifier_scan_codes.insert(scan_code);
-
-        // A lock modifier key can lock the layer it is defined on by targeting the own layer.
-        // Skip adding those self-lock modifier to the layer graph to prevent cycles.
-        // They would not have any effect because they do not change the layer.
-        if layer != target_layer {
-            self.add_edge_scan_code(scan_code, layer, target_layer);
-        }
     }
 }

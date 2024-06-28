@@ -381,6 +381,47 @@ fn layer_lock_shared_path() {
 }
 
 #[test]
+fn layer_lock_caps() {
+    let mut layout = Layout::new();
+    let base = layout.add_layer(String::from("base"));
+    layout.set_base_layer(base);
+    let shift = layout.add_layer(String::from("shift"));
+
+    // base layer
+    layout.add_layer_lock(0x3A, base, shift); // caps lock
+    layout.add_key(0x3A, base, VirtualKey(0x14)); // forward caps vk
+    layout.add_key(0xFF, base, Character('x'));
+
+    // shift layer
+    layout.add_key(0xFF, shift, Character('X'));
+
+    let mut kb = VirtualKeyboard::new(&layout);
+
+    assert_eq!(kb.press_key(0xFF), Some(Character('x')));
+    assert_eq!(kb.release_key(0xFF), Some(Character('x')));
+
+    // Activate caps lock (but do not release yet)
+    assert_eq!(kb.press_key(0x3A), Some(VirtualKey(0x14)));
+    assert_eq!(kb.press_key(0xFF), Some(Character('X')));
+    assert_eq!(kb.release_key(0xFF), Some(Character('X')));
+
+    // Release caps lock key, shift layer stays activated
+    assert_eq!(kb.release_key(0x3A), Some(VirtualKey(0x14)));
+    assert_eq!(kb.press_key(0xFF), Some(Character('X')));
+    assert_eq!(kb.release_key(0xFF), Some(Character('X')));
+
+    // Deativate caps lock (but do not release yet)
+    assert_eq!(kb.press_key(0x3A), Some(VirtualKey(0x14)));
+    assert_eq!(kb.press_key(0xFF), Some(Character('x')));
+    assert_eq!(kb.release_key(0xFF), Some(Character('x')));
+
+    // Release caps lock key
+    assert_eq!(kb.release_key(0x3A), Some(VirtualKey(0x14)));
+    assert_eq!(kb.press_key(0xFF), Some(Character('x')));
+    assert_eq!(kb.release_key(0xFF), Some(Character('x')));
+}
+
+#[test]
 fn layer_lock_caps_neo() {
     let mut layout = Layout::new();
     let base = layout.add_layer(String::from("base"));
@@ -402,7 +443,6 @@ fn layer_lock_caps_neo() {
     layout.add_layer_lock(0xE036, shift, shift);
 
     layout.add_key(0xFF, shift, Character('X'));
-
 
     let mut kb = VirtualKeyboard::new(&layout);
 
