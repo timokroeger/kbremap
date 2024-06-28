@@ -170,7 +170,9 @@ fn layer_lock() {
     layout.add_key(0xB0, a, Ignore);
 
     layout.add_layer_lock(0x0A, a, a);
+    layout.add_modifier(0x0A, a, base);
     layout.add_layer_lock(0xA0, a, a);
+    layout.add_modifier(0xA0, a, base);
 
     layout.add_key(0xFF, a, Character('A'));
 
@@ -214,25 +216,23 @@ fn layer_lock() {
     assert_eq!(kb.press_key(0xFF), Some(Character('C')));
     assert_eq!(kb.release_key(0xFF), Some(Character('C')));
 
-    // Lock layer c
+    // Try to lock layer c
     assert_eq!(kb.press_key(0xB0), Some(Ignore));
     assert_eq!(kb.release_key(0xB0), Some(Ignore));
 
-    // Temp switched to layer a still
-    assert_eq!(kb.press_key(0xFF), Some(Character('A')));
-    assert_eq!(kb.release_key(0xFF), Some(Character('A')));
-
-    // Check if locked to layer c
-    assert_eq!(kb.release_key(0x0B), Some(Ignore));
+    // Locks failed, on layer c because mod still pressed
     assert_eq!(kb.press_key(0xFF), Some(Character('C')));
     assert_eq!(kb.release_key(0xFF), Some(Character('C')));
 
-    // Unlock layer c
+    // Lock failed, on layer a still after mod released
+    assert_eq!(kb.release_key(0x0B), Some(Ignore));
+    assert_eq!(kb.press_key(0xFF), Some(Character('A')));
+    assert_eq!(kb.release_key(0xFF), Some(Character('A')));
+
+    // Unlock layer a
     assert_eq!(kb.press_key(0xA0), Some(Ignore));
-    assert_eq!(kb.press_key(0xB0), Some(Ignore));
     assert_eq!(kb.press_key(0x0A), Some(Ignore));
     assert_eq!(kb.release_key(0x0A), Some(Ignore));
-    assert_eq!(kb.release_key(0xB0), Some(Ignore));
     assert_eq!(kb.release_key(0xA0), Some(Ignore));
 
     // Check if locked to layer base
@@ -315,10 +315,10 @@ fn transparency() {
     assert_eq!(kb.press_key(0x04), Some(Character('C')));
     assert_eq!(kb.release_key(0x04), Some(Character('C')));
 
-    // Unlock layer c, with a different sequence
-    assert_eq!(kb.press_key(0xCC), Some(Ignore));
+    // Unlock layer c
     assert_eq!(kb.press_key(0xAB), Some(Ignore));
     assert_eq!(kb.press_key(0xBC), Some(Ignore));
+    assert_eq!(kb.press_key(0xCC), Some(Ignore));
     assert_eq!(kb.release_key(0xCC), Some(Ignore));
     assert_eq!(kb.release_key(0xAB), Some(Ignore));
     assert_eq!(kb.release_key(0xBC), Some(Ignore));
@@ -381,7 +381,7 @@ fn layer_lock_shared_path() {
 }
 
 #[test]
-fn layer_lock_caps() {
+fn layer_lock_caps_neo() {
     let mut layout = Layout::new();
     let base = layout.add_layer(String::from("base"));
     layout.set_base_layer(base);
@@ -390,13 +390,15 @@ fn layer_lock_caps() {
     layout.add_modifier(0x2A, base, shift);
     layout.add_key(0x2A, base, VirtualKey(0xA0)); // forward shift vk
     layout.add_modifier(0xE036, base, shift);
-    layout.add_key(0xE036, base, VirtualKey(0xA0)); // forward shift vk
+    layout.add_key(0xE036, base, VirtualKey(0xA1)); // forward shift vk
 
     layout.add_key(0xFF, base, Character('x'));
 
     layout.add_key(0x2A, shift, VirtualKey(0x14)); // caps lock vk
+    layout.add_modifier(0x2A, shift, base); // temp base layer
     layout.add_layer_lock(0x2A, shift, shift);
     layout.add_key(0xE036, shift, VirtualKey(0x14)); // caps lock vk
+    layout.add_modifier(0xE036, shift, base); // temp base layer
     layout.add_layer_lock(0xE036, shift, shift);
 
     layout.add_key(0xFF, shift, Character('X'));
