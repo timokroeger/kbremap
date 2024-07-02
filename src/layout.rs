@@ -37,6 +37,12 @@ pub struct Layout {
     base_layer: LayerIdx,
 }
 
+impl Default for Layout {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Layout {
     pub fn new() -> Self {
         Self {
