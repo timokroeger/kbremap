@@ -1,17 +1,17 @@
 # Example Dvorak layout configuration with comments.
 
+# Layer to be used when no modifier key is pressed.
 base_layer = "base"
 
 # Associates the caps lock key and indicator light with a layer.
 # Especially useful when the caps lock key is remapped and you accidentally use it
 # from a program running with admin rights (where kbremap does not work).
-# Windows remote desktop RDP also always captures your input with admin rights and
-# changes your caps lock state even when running kbremap on your remote machine.
 caps_lock_layer = "shift"
 
-# Uncomment to disable the caps lock indicator entirely (even when enabled externally).
-# Only disables the `VK_CAPITAL` virtual key. Layers can still be locked when configured below.
-# To disable locking, uncomment the `layer_lock` action on the base layer.
+# Uncomment to disable the caps lock indicator entirely (even when enabled externally,
+# e.g. pressing the caps lock key when an elevated window has focus).
+# Disables the `VK_CAPITAL` virtual key. Layers can still be locked with the `lock` target.
+# To actually disable locking, comment out the `lock` target on the base layer.
 # The "unreachable" layer is defined at the end of the file.
 #caps_lock_layer = "unreachable"
 
@@ -25,13 +25,16 @@ caps_lock_layer = "shift"
 # Scan codes without explicit mapping will use the default Windows layout to translate
 # a key press to a [virtual key code](https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes).
 #
-# Use the debug output to observe scan code (sc) and virtual key code (vk) information while pressing keys.
+# Use the debug output to observe scan code (sc) and virtual key code (vk) information while
+# pressing keys. To see the debug output either run kbremap from the command line or enable the
+# console output from the tray icon menu.
 base = [
-    # The `characters` target remaps multiple keys to (Unicode) characters starting
-    # at `scan_code`. Increments `scan_code` by one for each following character.
-    # Simulates a virtual key press if the character exists on the active Windows layout
-    # so that keyborad shortcuts (e.g. Ctrl+a) continue to work as expected.
-    # Injects a Unicode symbol if the character is not available on the Windows layout.
+    # The `characters` target remaps multiple keys to (Unicode) characters.
+    # The first key to be mapped is specifed by `scan_code`. The scan code is incremented by one
+    # for each character, which means each key is mapped one character of the `characters` string.
+    # Simulates a virtual key press if the target character exists on the active Windows layout
+    # so that keyborad shortcuts (e.g. Ctrl+a) continue to work as expected. Injects a Unicode
+    # symbol if the target character is not available on the active Windows layout.
     { scan_code = 0x02, characters = "1234567890[]" },
     { scan_code = 0x10, characters = "',.pyfgcrl/=\\" },
     { scan_code = 0x1E, characters = "aoeuidhtns-" },
@@ -41,11 +44,13 @@ base = [
     # Ignores the original scan code if no `virtual_key` is specified.
     { scan_code = 0x2A,   layer = "shift", virtual_key = 0xA0 }, # left shift
     { scan_code = 0xE036, layer = "shift", virtual_key = 0xA1 }, # right shift
+
+    # The `lock` target locks the layer until the same key is pressed again.
     { scan_code = 0x3A,   lock = "shift" }, # caps lock
 
     # The `virtual_keys` works similar to the `characters` target but takes a collection of virtual keys.
     # An empty target can be used to ignore scan codes.
-    { scan_code = 0x021D, virtual_keys = [] }, # ignored additional scan code from `Alt Gr`
+    { scan_code = 0x021D, virtual_keys = [] }, # ignore additional scan code from `Alt Gr`
 
     # Emoji Keys!
     # { scan_code = 0x29, characters = "🚀" }, # `~` on US layout, `^` on german layout

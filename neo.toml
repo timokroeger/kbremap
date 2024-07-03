@@ -19,7 +19,7 @@ caps_lock_layer = "2_shift"
     { scan_code = 0x2B, layer = "3_symbols" }, # `\` on US layout, `#` key on german layout
     { scan_code = 0x56, layer = "4_navigation_numpad" }, # `>` on german layout
     { scan_code = 0xE038, layer = "4_navigation_numpad" }, # `right alt` US layout, `Alt Gr` on german layout
-    { scan_code = 0x021D, virtual_keys = [0] }, # ignored additional scan code from `Alt Gr`
+    { scan_code = 0x021D, virtual_keys = [] }, # ignore additional scan code from `Alt Gr`
 ]
 
 2_shift = [
@@ -51,7 +51,6 @@ caps_lock_layer = "2_shift"
     { scan_code = 0xE036, layer = "5_greek", virtual_key = 0xA1 }, # right shift
     { scan_code = 0x56, layer = "6_greek" }, # `>` on german layout
     { scan_code = 0xE038, layer = "6_greek" }, # `right alt` US layout, `Alt Gr` on german layout
-    { scan_code = 0x021D, virtual_keys = [0] }, # ignored additional scan code from `Alt Gr`
 ]
 
 4_navigation_numpad = [

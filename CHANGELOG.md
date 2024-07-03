@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.0.0] - 2024-07-03
+
+### Breaking Configuration Changes
+
+- The `base_layer` must be specified in the configuration (it is not inferred automatically anymore).
+- Split `layer_lock` target into separate `layer` and `lock` targets.
+- Locked layers no longer automatically have temporary modifiers to revert their activation.
+  Temporary modifiers can be specified with the `layer` target like normal modifiers.
+
+### Code changes
+
+- Improvements to the tray icon code: Message loop and window creation handled by the `winmsg-executor` crate.
+- Use stabilized language and library features: C-String literals and TLS functions
+- Better handling and documentation around re-entrancy of the low level keyboard hook
+- Refactor layout handling:
+  * Remove manual bit packed keymapping representation
+  * Prepare for layouts to be serialized
+  * Clear interface between immutable layout and virtual keyboard using the layout
+  * Remove all graph algorithms and dependency on `petgraph`
+
 ## [1.6.0] - 2023-07-19
 
 - Allow configurations with only one layer
@@ -89,7 +109,8 @@
 Initial Release
 
 
-[Unreleased]: https://github.com/timokroeger/kbremap/compare/v1.6.0..HEAD
+[Unreleased]: https://github.com/timokroeger/kbremap/compare/v2.0.0..HEAD
+[2.0.0]: https://github.com/timokroeger/kbremap/compare/v1.6.0..v2.0.0
 [1.6.0]: https://github.com/timokroeger/kbremap/compare/v1.5.1..v1.6.0
 [1.5.1]: https://github.com/timokroeger/kbremap/compare/v1.5.0..v1.5.1
 [1.5.0]: https://github.com/timokroeger/kbremap/compare/v1.4.2..v1.5.0
