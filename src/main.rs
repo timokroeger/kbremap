@@ -135,11 +135,7 @@ fn main() -> Result<()> {
     const WM_APP_TRAYICON: u32 = WM_APP + 873;
     let tray_icon = TrayIcon::new(WM_APP_TRAYICON, icon_enabled.0);
 
-    let cmd = env::current_exe().unwrap();
-    let autostart = AutoStartEntry::new(
-        c"kbremap".into(),
-        CString::new(cmd.to_str().unwrap()).unwrap(),
-    );
+    let autostart = AutoStartEntry::new(c"kbremap");
 
     // Enabled state can be changed by double click to the tray icon or from the context menu.
     let toggle_enabled = || {
