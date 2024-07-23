@@ -65,7 +65,11 @@ fn add_tray_icon(hwnd: HWND, icon: HICON) {
     notification_data.uFlags = NIF_MESSAGE | NIF_ICON;
     notification_data.uCallbackMessage = MSG_ID_TRAY_ICON;
     notification_data.hIcon = icon;
-    unsafe { Shell_NotifyIconA(NIM_ADD, &notification_data) };
+    notification_data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
+    unsafe {
+        Shell_NotifyIconA(NIM_ADD, &notification_data);
+        Shell_NotifyIconA(NIM_SETVERSION, &notification_data);
+    }
 }
 
 fn update_tray_icon(hwnd: HWND, icon: HICON) {
