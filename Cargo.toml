@@ -11,9 +11,9 @@ repository = "https://github.com/timokroeger/kbremap"
 anyhow = "1.0"
 encode_unicode = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-thiserror = "1.0.61"
+thiserror = "2.0"
 toml = "0.8.12"
-windows-sys = { version = "0.52.0", features = [
+windows-sys = { version = "0.59.0", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Security",
@@ -27,7 +27,7 @@ windows-sys = { version = "0.52.0", features = [
     "Win32_UI_TextServices",
     "Win32_UI_WindowsAndMessaging",
 ] }
-winmsg-executor = "0.1.0"
+winmsg-executor = "0.1.1"
 
 [build-dependencies]
 winresource = { version = "0.1.15", default-features = false }

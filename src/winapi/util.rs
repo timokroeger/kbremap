@@ -11,7 +11,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 pub fn register_instance(name: &CStr) -> bool {
     unsafe {
         let handle = CreateMutexA(ptr::null(), 0, name.as_ptr().cast());
-        if handle == 0 && GetLastError() == ERROR_ALREADY_EXISTS {
+        if handle.is_null() && GetLastError() == ERROR_ALREADY_EXISTS {
             CloseHandle(handle);
             false
         } else {
@@ -56,7 +56,7 @@ fn disable_quick_edit_mode() {
             ptr::null(),
             OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL,
-            0,
+            ptr::null_mut(),
         );
         let mut mode: u32 = 0;
         if GetConsoleMode(console as _, &mut mode) != 0 {

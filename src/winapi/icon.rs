@@ -17,7 +17,7 @@ impl Icon {
                 LR_DEFAULTSIZE,
             )
         };
-        assert_ne!(hicon, 0, "icon resource {} not found", id);
+        assert!(!hicon.is_null(), "icon resource {} not found", id);
         Self(hicon)
     }
 }

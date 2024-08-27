@@ -9,7 +9,7 @@ pub struct PopupMenu(HMENU);
 impl PopupMenu {
     pub fn new() -> Self {
         let hmenu = unsafe { CreatePopupMenu() };
-        assert_ne!(hmenu, 0);
+        assert!(!hmenu.is_null());
         Self(hmenu)
     }
 

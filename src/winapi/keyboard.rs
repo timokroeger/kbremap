@@ -48,8 +48,12 @@ where
         let mut callback = Box::new(callback);
         HOOK.set(&mut *callback as *mut F as usize);
 
-        let handle = unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc::<F>), 0, 0) };
-        assert_ne!(handle, 0, "Failed to install low-level keyboard hook.");
+        let handle =
+            unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc::<F>), ptr::null_mut(), 0) };
+        assert!(
+            !handle.is_null(),
+            "Failed to install low-level keyboard hook."
+        );
         KeyboardHook {
             handle,
             _hook_proc: callback,
@@ -133,7 +137,7 @@ where
     F: FnMut(KeyEvent) -> bool + 'static,
 {
     if code != HC_ACTION as i32 {
-        return CallNextHookEx(0, code, wparam, lparam);
+        return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
     }
 
     let hook_lparam = &*(lparam as *const KBDLLHOOKSTRUCT);
@@ -144,7 +148,7 @@ where
     // events to prevent recursion and potential stack overflows if our
     // remapping logic has sent the injected event.
     if injected {
-        return CallNextHookEx(0, code, wparam, lparam);
+        return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
     }
 
     // There are two conditions for which the hook can be re-entered:
@@ -174,7 +178,7 @@ where
     if handled {
         -1
     } else {
-        CallNextHookEx(0, code, wparam, lparam)
+        CallNextHookEx(ptr::null_mut(), code, wparam, lparam)
     }
 }
 
@@ -257,7 +261,7 @@ pub fn get_virtual_key(c: char) -> Option<u8> {
         // console applications: https://github.com/microsoft/terminal/issues/83
         // Fall back to the layout used by our process which is hopefully the
         // correct one for the console too.
-        if layout == 0 {
+        if layout.is_null() {
             layout = GetKeyboardLayout(0);
         }
         let vk_state = VkKeyScanExW(c.to_utf16()[0], layout);
