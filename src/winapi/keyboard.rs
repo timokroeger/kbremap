@@ -14,7 +14,7 @@ const HOOK_INVALID: usize = 0;
 const HOOK_EXECUTING: usize = 1;
 
 thread_local! {
-    /// Stores a type erased pointer to the hook closure.
+    /// Stores a type-erased pointer to the hook closure.
     static HOOK: Cell<usize> = const { Cell::new(HOOK_INVALID) };
     static QUEUED_INPUTS: RefCell<Vec<INPUT>> = const { RefCell::new(Vec::new()) };
 }
@@ -33,9 +33,9 @@ where
     /// Sets the low-level keyboard hook for this thread.
     ///
     /// The closure receives key press and key release events. When the closure
-    /// returns `false` the key event is not modified and forwarded as if
+    /// returns `false`, the key event is not modified and forwarded as if
     /// nothing happened. To ignore a key event or to remap it to another
-    /// key return `true` and use [`send_key()`].
+    /// key, return `true` and use [`send_key()`].
     ///
     /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediately be unregistered and not work."]
@@ -71,7 +71,7 @@ impl<F> Drop for KeyboardHook<F> {
 /// Type of a key event.
 #[derive(Debug, Clone, Copy)]
 pub enum KeyType {
-    /// Virtual key as defined by the layout set by windows.
+    /// Virtual key as defined by the layout set by Windows.
     ///
     /// <https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes>
     VirtualKey(u8),
@@ -80,17 +80,17 @@ pub enum KeyType {
     Unicode(char),
 }
 
-/// Key event received by the low level keyboard hook.
+/// Key event received by the low-level keyboard hook.
 #[derive(Debug, Clone, Copy)]
 pub struct KeyEvent {
-    /// Virtual key or unicode character of this event.
+    /// Virtual key or Unicode character of this event.
     pub key: KeyType,
 
     /// Scan code as defined by the keyboard.
     /// Extended keycodes have the three most significant bits set (0xExxx).
     pub scan_code: u16,
 
-    /// Key was released
+    /// Key was released.
     pub up: bool,
 
     /// Time in milliseconds since boot.
@@ -131,7 +131,9 @@ impl KeyEvent {
     }
 }
 
-/// The actual WinAPI compatible callback.
+/// The actual WinAPI compatible hook callback function.
+/// Called from `KiUserCallbackDispatcher()` context as described in
+/// (this blog post)[http://www.nynaeve.net/?p=204]. Might be re-entered.
 unsafe extern "system" fn hook_proc<F>(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT
 where
     F: FnMut(KeyEvent) -> bool + 'static,
@@ -151,20 +153,35 @@ where
         return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
     }
 
-    // There are two conditions for which the hook can be re-entered:
-    // 1. `SendInput()` creates new injected input events.
-    //   We queue input events and send them after the hook closure has
-    //   returned to prevent a second mutable borrow to the closure.
-    // 2. `CallNextHookEx()` when more than one unhandled input event is queued.
-    //   Not exposed to the user and such must not be called within the closure.
+    // There is at least one edge case where this hook function is re-entered and
+    // we reach here because we received a real event while either blocking on
+    // `CallNextHookEx()` or while executing the user-provided hook closure.
+    // The latter being problematic because we cannot have more than one mutable
+    // reference to the closure at a time.
     //
-    // How to trigger 2.:
-    // The classic CMD window has a "Quick Edit Mode" option which is enabled
-    // by default. Windows stops to read from stdout and stderr when the user
-    // selects characters in the CMD window.
-    // Any write to stdout (e.g. a call to `println!()`) blocks while
-    // "Quick Edit Mode" is active. The key event which exits the "Quick Edit
-    // Mode" triggers the hook a second time.
+    // To reproduce how the issue was discovered:
+    // 1. Compile a version of this code with a `println!()` call at the
+    //    beginning of the hook closure.
+    // 2. Run the compiled binary twice (but not from a command line window).
+    // 3. In the instance launched first (order is important), open the debug
+    //    console and enable "QuickEdit Mode" in the console properties by
+    //    right-clicking the title bar.
+    // 4. Select some text in the console window of the first instance. Windows
+    //    now blocks the process running in the console when accessing stdout.
+    // 5. Now type a key that is remapped in the config.
+    // 6. The second instance will crash.
+    //
+    // It appears that the hook function will only be re-entered by new real
+    // keyboard events when it blocks longer than the number of ms specified in
+    // the registry key `HKEY_CURRENT_USER\Control Panel\LowLevelHooksTimeout`.
+    //
+    // That is why the user-provided hook closure must not block. Unfortunately,
+    // calls to the `SendInput()` function may block if another low-level
+    // keyboard hook is registered (in a different thread) after ours in the
+    // hook chain. As remapping keys is one of the primary use cases for the
+    // user-provided closure, we must be prepared to handle faulty downstream
+    // low-level hook implementations. As a fix, `send_key()` buffers input
+    // events and sends them using `SendInput()` after returning from the closure.
 
     // Replace the pointer to the closure with a marker, so that `send_key()`
     // can detect if it was called from within the hook.
@@ -201,8 +218,8 @@ pub fn send_key(key: KeyEvent) {
                 });
             }
             KeyType::Unicode(c) => {
-                // Sends a unicode character, knows as `VK_PACKET`.
-                // Interestingly this is faster than sending a regular virtual key event.
+                // Sends a Unicode character, known as `VK_PACKET`.
+                // Interestingly, this is faster than sending a regular virtual key event.
                 for c in c.to_utf16() {
                     queued_inputs.push(INPUT {
                         r#type: INPUT_KEYBOARD,
@@ -273,7 +290,7 @@ pub fn get_virtual_key(c: char) -> Option<u8> {
         let dead_key =
             MapVirtualKeyExW((vk_state & 0xFF) as u32, MAPVK_VK_TO_CHAR, layout) & 0x80000000 != 0;
         if dead_key {
-            // We have virtual key but it is a dead-key, e.g.: `^` or `~` on international layouts.
+            // We have a virtual key but it is a dead-key, e.g.: `^` or `~` on international layouts.
             return None;
         }
 
