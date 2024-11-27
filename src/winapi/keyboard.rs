@@ -11,12 +11,12 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 // Use invalid pointers to track state.
-const HOOK_INVALID: usize = 0;
+const HOOK_NOT_SET: usize = 0;
 const HOOK_EXECUTING: usize = 1;
 
 thread_local! {
     /// Stores a type-erased pointer to the hook closure.
-    static HOOK: Cell<usize> = const { Cell::new(HOOK_INVALID) };
+    static HOOK: Cell<usize> = const { Cell::new(HOOK_NOT_SET) };
     static QUEUED_INPUTS: RefCell<Vec<INPUT>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -43,7 +43,7 @@ where
     #[must_use = "The hook will immediately be unregistered and not work."]
     pub fn set(callback: F) -> Self {
         assert!(
-            HOOK.get() == 0,
+            HOOK.get() == HOOK_NOT_SET,
             "Only one keyboard hook can be registered per thread."
         );
 
@@ -67,7 +67,7 @@ impl<F> Drop for KeyboardHook<F> {
     fn drop(&mut self) {
         unsafe {
             UnhookWindowsHookEx(self.handle);
-            drop(Box::from_raw(HOOK.replace(HOOK_INVALID) as *mut F));
+            drop(Box::from_raw(HOOK.replace(HOOK_NOT_SET) as *mut F));
         }
     }
 }
@@ -190,22 +190,32 @@ where
     // Replace the pointer to the closure with a marker, so that `send_key()`
     // can detect if it was called from within the hook.
     let hook_ptr = HOOK.replace(HOOK_EXECUTING) as *mut F;
-    let hook = unsafe { hook_ptr.as_mut().unwrap() };
-    let handled = hook(key_event);
-    HOOK.set(hook_ptr as usize);
 
-    send_queued_inputs();
-
-    if handled {
-        -1
-    } else {
-        CallNextHookEx(ptr::null_mut(), code, wparam, lparam)
+    // When the hook callback is re-entered due to another edge case we have
+    // not yet discovered, the pointer will be invalid. Only call the closure
+    // when we are sure it is available.
+    if let Some(hook) = unsafe { hook_ptr.as_mut() } {
+        let handled = hook(key_event);
+        HOOK.set(hook_ptr as usize);
+        send_queued_inputs();
+        if handled {
+            return -1;
+        }
     }
+
+    CallNextHookEx(ptr::null_mut(), code, wparam, lparam)
 }
 
 /// Sends a virtual key event.
 pub fn send_key(key: KeyEvent) {
-    QUEUED_INPUTS.with_borrow_mut(|queued_inputs| {
+    let _ = QUEUED_INPUTS.with(|queued_inputs| {
+        // There is a very small chance that windows re-enters the hook while
+        // we are moving out the data from the queue in `send_queued_inputs()`.
+        // We cannot do anything about that, do not send the key event.
+        let Ok(mut queued_inputs) = queued_inputs.try_borrow_mut() else {
+            return;
+        };
+
         match key.key {
             KeyType::VirtualKey(vk) => {
                 queued_inputs.push(INPUT {
@@ -252,8 +262,7 @@ pub fn send_key(key: KeyEvent) {
 }
 
 fn send_queued_inputs() {
-    let mut queued_inputs = QUEUED_INPUTS.with_borrow_mut(std::mem::take);
-
+    let queued_inputs = QUEUED_INPUTS.with_borrow_mut(std::mem::take);
     if !queued_inputs.is_empty() {
         unsafe {
             SendInput(
@@ -262,11 +271,7 @@ fn send_queued_inputs() {
                 mem::size_of::<INPUT>() as _,
             )
         };
-        queued_inputs.clear();
     }
-
-    // Re-use the previous allocation
-    QUEUED_INPUTS.with_borrow_mut(move |qi| std::mem::replace(qi, queued_inputs));
 }
 
 /// Returns a virtual key code if the requested character can be typed with a
