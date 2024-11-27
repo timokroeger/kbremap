@@ -2,6 +2,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::fmt::Display;
+use std::marker::PhantomData;
 use std::{mem, ptr};
 
 use encode_unicode::CharExt;
@@ -23,7 +24,8 @@ thread_local! {
 /// Automatically unregisters the hook when dropped.
 pub struct KeyboardHook<F> {
     handle: HHOOK,
-    _hook_proc: Box<F>,
+    // Required for drop to properly drop the closure.
+    _closure_type: PhantomData<F>,
 }
 
 impl<F> KeyboardHook<F>
@@ -45,8 +47,8 @@ where
             "Only one keyboard hook can be registered per thread."
         );
 
-        let mut callback = Box::new(callback);
-        HOOK.set(&mut *callback as *mut F as usize);
+        let callback = Box::into_raw(Box::new(callback));
+        HOOK.set(callback as usize);
 
         let handle =
             unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc::<F>), ptr::null_mut(), 0) };
@@ -56,15 +58,17 @@ where
         );
         KeyboardHook {
             handle,
-            _hook_proc: callback,
+            _closure_type: PhantomData,
         }
     }
 }
 
 impl<F> Drop for KeyboardHook<F> {
     fn drop(&mut self) {
-        unsafe { UnhookWindowsHookEx(self.handle) };
-        HOOK.set(HOOK_INVALID);
+        unsafe {
+            UnhookWindowsHookEx(self.handle);
+            drop(Box::from_raw(HOOK.replace(HOOK_INVALID) as *mut F));
+        }
     }
 }
 
