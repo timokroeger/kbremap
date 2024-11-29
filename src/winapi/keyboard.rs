@@ -208,7 +208,7 @@ where
 
 /// Sends a virtual key event.
 pub fn send_key(key: KeyEvent) {
-    let _ = QUEUED_INPUTS.with(|queued_inputs| {
+    QUEUED_INPUTS.with(|queued_inputs| {
         // There is a very small chance that windows re-enters the hook while
         // we are moving out the data from the queue in `send_queued_inputs()`.
         // We cannot do anything about that, do not send the key event.

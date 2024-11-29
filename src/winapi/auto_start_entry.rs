@@ -46,7 +46,6 @@ impl<'a> AutoStartEntry<'a> {
                 ptr::addr_of_mut!(path_buf_reg).cast(),
                 &mut path_len_reg,
             ) == 0;
-
             if !key_exists {
                 return false;
             }
@@ -64,7 +63,7 @@ impl<'a> AutoStartEntry<'a> {
             // Add 1 to the length of the executable path to include the null
             // terminator in the string comparison.
             path_len_exe += 1;
-            return &path_buf_exe[..path_len_exe] == &path_buf_reg[..path_len_reg as usize];
+            path_buf_exe[..path_len_exe] == path_buf_reg[..path_len_reg as usize]
         }
     }
 
