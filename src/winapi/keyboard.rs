@@ -1,23 +1,19 @@
 //! Safe abstraction over the low-level windows keyboard hook API.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::fmt::Display;
 use std::marker::PhantomData;
 use std::{mem, ptr};
 
 use encode_unicode::CharExt;
 use windows_sys::Win32::Foundation::*;
+use windows_sys::Win32::System::Threading::{TrySubmitThreadpoolCallback, PTP_CALLBACK_INSTANCE};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-// Use invalid pointers to track state.
-const HOOK_NOT_SET: usize = 0;
-const HOOK_EXECUTING: usize = 1;
-
 thread_local! {
     /// Stores a type-erased pointer to the hook closure.
-    static HOOK: Cell<usize> = const { Cell::new(HOOK_NOT_SET) };
-    static QUEUED_INPUTS: RefCell<Vec<INPUT>> = const { RefCell::new(Vec::new()) };
+    static HOOK: Cell<*mut ()> = const { Cell::new(ptr::null_mut()) };
 }
 
 /// Wrapper for the low-level keyboard hook API.
@@ -43,12 +39,12 @@ where
     #[must_use = "The hook will immediately be unregistered and not work."]
     pub fn set(callback: F) -> Self {
         assert!(
-            HOOK.get() == HOOK_NOT_SET,
+            HOOK.get().is_null(),
             "Only one keyboard hook can be registered per thread."
         );
 
         let callback = Box::into_raw(Box::new(callback));
-        HOOK.set(callback as usize);
+        HOOK.set(callback as *mut ());
 
         let handle =
             unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc::<F>), ptr::null_mut(), 0) };
@@ -67,7 +63,7 @@ impl<F> Drop for KeyboardHook<F> {
     fn drop(&mut self) {
         unsafe {
             UnhookWindowsHookEx(self.handle);
-            drop(Box::from_raw(HOOK.replace(HOOK_NOT_SET) as *mut F));
+            drop(Box::from_raw(HOOK.replace(ptr::null_mut()) as *mut F));
         }
     }
 }
@@ -147,57 +143,32 @@ where
     }
 
     let hook_lparam = &*(lparam as *const KBDLLHOOKSTRUCT);
-    let key_event = KeyEvent::from_hook_lparam(hook_lparam);
     let injected = hook_lparam.flags & LLKHF_INJECTED != 0;
 
-    // `SendInput()` internally calls the hook function. Filter out injected
-    // events to prevent recursion and potential stack overflows if our
-    // remapping logic has sent the injected event.
+    // `SendInput()` internally triggers the hook function. Filter out injected
+    // events to prevent an infinite loop if our remapping logic has sent the
+    // injected event.
     if injected {
         return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
     }
 
-    // There is at least one edge case where this hook function is re-entered and
-    // we reach here because we received a real event while either blocking on
-    // `CallNextHookEx()` or while executing the user-provided hook closure.
-    // The latter being problematic because we cannot have more than one mutable
-    // reference to the closure at a time.
-    //
-    // To reproduce how the issue was discovered:
-    // 1. Compile a version of this code with a `println!()` call at the
-    //    beginning of the hook closure.
-    // 2. Run the compiled binary twice (but not from a command line window).
-    // 3. In the instance launched first (order is important), open the debug
-    //    console and enable "QuickEdit Mode" in the console properties by
-    //    right-clicking the title bar.
-    // 4. Select some text in the console window of the first instance. Windows
-    //    now blocks the process running in the console when accessing stdout.
-    // 5. Now type a key that is remapped in the config.
-    // 6. The second instance will crash.
-    //
-    // It appears that the hook function will only be re-entered by new real
-    // keyboard events when it blocks longer than the number of ms specified in
-    // the registry key `HKEY_CURRENT_USER\Control Panel\LowLevelHooksTimeout`.
-    //
-    // That is why the user-provided hook closure must not block. Unfortunately,
-    // calls to the `SendInput()` function may block if another low-level
-    // keyboard hook is registered (in a different thread) after ours in the
-    // hook chain. As remapping keys is one of the primary use cases for the
-    // user-provided closure, we must be prepared to handle faulty downstream
-    // low-level hook implementations. As a fix, `send_key()` buffers input
-    // events and sends them using `SendInput()` after returning from the closure.
+    // Windows re-enters the hook function for two conditions:
+    // 1. `SendInput()` called from within the hook, which produces an injected
+    //    message. We pass on injected messages without looking at them anyway.
+    // 2. The hook blocks longer than the number of ms specified in the registry
+    //    key `HKEY_CURRENT_USER\Control Panel\LowLevelHooksTimeout`.
 
-    // Replace the pointer to the closure with a marker, so that `send_key()`
-    // can detect if it was called from within the hook.
-    let hook_ptr = HOOK.replace(HOOK_EXECUTING) as *mut F;
+    // As the main use case for a low-level keyboard hook is to remap keys,
+    // we implement a non-blocking `send_key()` function (see below) which can
+    // safely be called from the hook.
 
-    // When the hook callback is re-entered due to another edge case we have
-    // not yet discovered, the pointer will be invalid. Only call the closure
-    // when we are sure it is available.
+    // The TLS `HOOK` variable contains a null pointer while the user-provided
+    // closure is running. We can use that to detect if the hook was re-entered.
+    // Only call the closure when we are sure it is available.
+    let hook_ptr = HOOK.replace(ptr::null_mut()) as *mut F;
     if let Some(hook) = unsafe { hook_ptr.as_mut() } {
-        let handled = hook(key_event);
-        HOOK.set(hook_ptr as usize);
-        send_queued_inputs();
+        let handled = hook(KeyEvent::from_hook_lparam(hook_lparam));
+        HOOK.set(hook_ptr as *mut ());
         if handled {
             return -1;
         }
@@ -208,69 +179,65 @@ where
 
 /// Sends a virtual key event.
 pub fn send_key(key: KeyEvent) {
-    QUEUED_INPUTS.with(|queued_inputs| {
-        // There is a very small chance that windows re-enters the hook while
-        // we are moving out the data from the queue in `send_queued_inputs()`.
-        // We cannot do anything about that, do not send the key event.
-        let Ok(mut queued_inputs) = queued_inputs.try_borrow_mut() else {
-            return;
-        };
-
-        match key.key {
-            KeyType::VirtualKey(vk) => {
-                queued_inputs.push(INPUT {
-                    r#type: INPUT_KEYBOARD,
-                    Anonymous: INPUT_0 {
-                        ki: KEYBDINPUT {
-                            wVk: vk.into(),
-                            wScan: key.scan_code,
-                            dwFlags: if key.up { KEYEVENTF_KEYUP } else { 0 },
-                            time: key.time,
-                            dwExtraInfo: 0,
-                        },
-                    },
-                });
-            }
-            KeyType::Unicode(c) => {
-                // Sends a Unicode character, known as `VK_PACKET`.
-                // Interestingly, this is faster than sending a regular virtual key event.
-                for c in c.to_utf16() {
-                    queued_inputs.push(INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 {
-                            ki: KEYBDINPUT {
-                                wVk: 0,
-                                wScan: c,
-                                dwFlags: KEYEVENTF_UNICODE
-                                    | if key.up { KEYEVENTF_KEYUP } else { 0 },
-                                time: key.time,
-                                dwExtraInfo: 0,
-                            },
-                        },
-                    });
-                }
-            }
-        };
-    });
-
-    if HOOK.get() != HOOK_EXECUTING {
-        // Send inputs only when not called from within the hook process.
-        send_queued_inputs();
-    } else {
-        // Events will be sent when leaving the hook to prevent re-entrancy edge cases.
+    // `SendInput()` may block if a slow/faulty low-level keyboard hook is
+    // registered. As a fix, forwards the key event to another thread to call
+    // `SendInput()` from there. That way our hook is unaffected by other
+    // faulty hooks and Windows can correctly remove the offending hooks from
+    // the hook chain.
+    unsafe {
+        TrySubmitThreadpoolCallback(
+            Some(send_key_callback),
+            Box::into_raw(Box::new(key)) as *mut _,
+            ptr::null(),
+        );
     }
 }
 
-fn send_queued_inputs() {
-    let queued_inputs = QUEUED_INPUTS.with_borrow_mut(std::mem::take);
-    if !queued_inputs.is_empty() {
-        unsafe {
-            SendInput(
-                queued_inputs.len() as u32,
-                queued_inputs.as_ptr(),
-                mem::size_of::<INPUT>() as _,
-            )
+unsafe extern "system" fn send_key_callback(
+    _instance: PTP_CALLBACK_INSTANCE,
+    context: *mut core::ffi::c_void,
+) {
+    unsafe {
+        let key = Box::from_raw(context as *mut KeyEvent);
+        let mut inputs: [INPUT; 2] = mem::zeroed();
+
+        let n_inputs = match key.key {
+            KeyType::VirtualKey(vk) => {
+                inputs[0].r#type = INPUT_KEYBOARD;
+                inputs[0].Anonymous.ki = KEYBDINPUT {
+                    wVk: vk.into(),
+                    wScan: key.scan_code,
+                    dwFlags: if key.up { KEYEVENTF_KEYUP } else { 0 },
+                    time: key.time,
+                    dwExtraInfo: 0,
+                };
+                1
+            }
+            KeyType::Unicode(c) => {
+                // Sends a unicode character, knows as `VK_PACKET`.
+                // Interestingly this is faster than sending a regular virtual key event.
+                inputs
+                    .iter_mut()
+                    .zip(c.to_utf16())
+                    .map(|(input, c)| {
+                        input.r#type = INPUT_KEYBOARD;
+                        input.Anonymous.ki = KEYBDINPUT {
+                            wVk: 0,
+                            wScan: c,
+                            dwFlags: KEYEVENTF_UNICODE | if key.up { KEYEVENTF_KEYUP } else { 0 },
+                            time: key.time,
+                            dwExtraInfo: 0,
+                        };
+                    })
+                    .count()
+            }
         };
+
+        SendInput(
+            n_inputs as _,
+            inputs.as_mut_ptr(),
+            mem::size_of::<INPUT>() as _,
+        );
     }
 }
 
