@@ -6,11 +6,11 @@ mod util;
 mod winapi;
 
 use std::cell::Cell;
-use std::ffi::{CString, OsStr};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use kbremap::{Config, KeyAction, ReadableConfig, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -97,13 +97,6 @@ impl App {
 }
 
 fn main() -> Result<()> {
-    // Prevent duplicate instances if windows re-runs autostarts when rebooting after OS updates.
-    let current_exe = env::current_exe()?;
-    let instance_key = CString::new(current_exe.to_string_lossy().as_bytes())?;
-    if !winapi::register_instance(&instance_key) {
-        return Err(anyhow!("another instance is already running"));
-    }
-
     let app: &App = Box::leak(Box::new(App::new()));
 
     let config = load_config()?;
