@@ -6,7 +6,7 @@ use crate::{LayerIdx, ScanCode};
 /// Collection of virtual keyboard layers and logic to switch between them
 /// depending on which modifier keys are pressed.
 #[derive(Debug)]
-pub struct VirtualKeyboard<'l> {
+pub struct VirtualKeyboard {
     /// Layer used when no modifier keys are pressed.
     locked_layer: LayerIdx,
 
@@ -23,12 +23,12 @@ pub struct VirtualKeyboard<'l> {
     pressed_keys: Vec<(ScanCode, Option<KeyAction>)>,
 
     /// Immutable information about the layout.
-    layout: &'l Layout,
+    layout: Layout,
 }
 
-impl<'l> VirtualKeyboard<'l> {
+impl VirtualKeyboard {
     /// Create a new virtual keyboard with `layout`.
-    pub fn new(layout: &'l Layout) -> Self {
+    pub fn new(layout: Layout) -> Self {
         assert!(layout.is_valid());
         Self {
             locked_layer: layout.base_layer(),
@@ -36,6 +36,12 @@ impl<'l> VirtualKeyboard<'l> {
             pressed_keys: Vec::new(),
             layout,
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.locked_layer = self.layout.base_layer();
+        self.layer_history = vec![self.layout.base_layer()];
+        self.pressed_keys.clear();
     }
 
     fn active_layer_idx(&self) -> LayerIdx {

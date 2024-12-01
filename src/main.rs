@@ -4,7 +4,7 @@
 mod resources;
 mod winapi;
 
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::ffi::{CString, OsStr};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -46,12 +46,44 @@ fn load_config() -> Result<Config> {
     Ok(Config::try_from(config)?)
 }
 
-fn register_keyboard_hook(
-    config: &'static Config,
-) -> KeyboardHook<impl FnMut(KeyEvent) -> bool + 'static> {
-    let mut kb = VirtualKeyboard::new(&config.layout);
+#[derive(Debug, Clone, Copy)]
+enum HookState {
+    Disabled,
+    Enabled,
+    Active,
+}
 
-    KeyboardHook::set(move |mut key_event| {
+fn main() -> Result<()> {
+    // Display debug and panic output when launched from a terminal.
+    // Not only checks if we are running from a terminal but also attaches to it.
+    let running_in_terminal = winapi::console_check();
+
+    // Prevent duplicate instances if windows re-runs autostarts when rebooting after OS updates.
+    let current_exe = env::current_exe()?;
+    let instance_key = CString::new(current_exe.to_string_lossy().as_bytes())?;
+    if !winapi::register_instance(&instance_key) {
+        return Err(anyhow!("already running with the same configuration"));
+    }
+
+    let config = load_config()?;
+    let mut kb = VirtualKeyboard::new(config.layout);
+
+    // Shared state between the keyboard hook and the tray icon UI code.
+    let hook_state: &Cell<HookState> = Box::leak(Box::new(Cell::new(HookState::Active)));
+
+    let _kbhook = KeyboardHook::set(move |mut key_event| {
+        match hook_state.get() {
+            HookState::Disabled => {
+                println!("{} forwarded because remapping is disabled", key_event);
+                return false;
+            }
+            HookState::Enabled => {
+                kb.reset();
+                hook_state.set(HookState::Active);
+            }
+            HookState::Active => {}
+        }
+
         let remap = if key_event.up {
             kb.release_key(key_event.scan_code)
         } else {
@@ -75,9 +107,6 @@ fn register_keyboard_hook(
                 println!("caps lock toggled");
             }
         }
-
-        //ui.set_active_layer(kb.active_layer());
-        //ui.set_locked_layer(kb.locked_layer());
 
         let Some(remap) = remap else {
             println!("{} forwarded", key_event);
@@ -105,25 +134,7 @@ fn register_keyboard_hook(
             }
         }
         true
-    })
-}
-
-fn main() -> Result<()> {
-    // Display debug and panic output when launched from a terminal.
-    // Not only checks if we are running from a terminal but also attaches to it.
-    let running_in_terminal = winapi::console_check();
-
-    // Prevent duplicate instances if windows re-runs autostarts when rebooting after OS updates.
-    let current_exe = env::current_exe()?;
-    let instance_key = CString::new(current_exe.to_string_lossy().as_bytes())?;
-    if !winapi::register_instance(&instance_key) {
-        return Err(anyhow!("already running with the same configuration"));
-    }
-
-    let config = load_config()?;
-    let config = Box::leak(Box::new(config));
-
-    let kbhook = &RefCell::new(Some(register_keyboard_hook(config)));
+    });
 
     // UI code
 
@@ -137,23 +148,23 @@ fn main() -> Result<()> {
 
     let autostart = AutoStartEntry::new(c"kbremap");
 
-    // Enabled state can be changed by double click to the tray icon or from the context menu.
-    let toggle_enabled = || {
-        let mut kbhook = kbhook.borrow_mut();
-        if kbhook.is_some() {
-            *kbhook = None;
-            tray_icon.set_icon(icon_disabled.0);
-        } else {
-            *kbhook = Some(register_keyboard_hook(config));
-            tray_icon.set_icon(icon_enabled.0);
-        }
-    };
-
     // Event loop required for the low-level keyboard hook and the tray icon.
-    run_message_loop_with_dispatcher(move |msg| {
+    run_message_loop_with_dispatcher(|msg| {
         if msg.message != WM_APP_TRAYICON {
             return false;
         }
+
+        // Enabled state can be changed by double click to the tray icon or from the context menu.
+        let enabled = matches!(hook_state.get(), HookState::Enabled | HookState::Active);
+        let toggle_enabled = || {
+            if enabled {
+                tray_icon.set_icon(icon_disabled.0);
+                hook_state.set(HookState::Disabled);
+            } else {
+                tray_icon.set_icon(icon_enabled.0);
+                hook_state.set(HookState::Enabled);
+            }
+        };
 
         let event = msg.lParam as u32;
         if event == WM_LBUTTONDBLCLK {
@@ -179,11 +190,7 @@ fn main() -> Result<()> {
                 flag_checked(winapi::console_check()) | flag_disabled(running_in_terminal),
                 c"Show debug output",
             );
-            menu.add_entry(
-                MENU_DISABLE,
-                flag_checked(kbhook.borrow().is_none()),
-                c"Disable",
-            );
+            menu.add_entry(MENU_DISABLE, flag_checked(!enabled), c"Disable");
             menu.add_entry(MENU_EXIT, 0, c"Exit");
 
             match menu.show(msg.hwnd, msg.pt) {
