@@ -1,15 +1,23 @@
 use std::cell::Cell;
 use std::mem;
 
+use pin_project::pin_project;
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::UI::Shell::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use winmsg_executor::util::Window;
 
+use crate::util::Notification;
+
 const MSG_ID_TRAY_ICON: u32 = WM_USER;
 
+#[pin_project]
 struct State {
     icon: Cell<HICON>,
+    #[pin]
+    double_click: Notification<POINT>,
+    #[pin]
+    right_click: Notification<POINT>,
 }
 
 pub struct TrayIcon {
@@ -17,33 +25,41 @@ pub struct TrayIcon {
 }
 
 impl TrayIcon {
-    pub fn new(msg_id: u32, icon: HICON) -> Self {
-        assert!(
-            (WM_APP..WM_APP + 0x4000).contains(&msg_id),
-            "message must be in the WM_APP range"
-        );
-
+    pub fn new(icon: HICON) -> Self {
         let msg_id_taskbar_created =
             unsafe { RegisterWindowMessageA(c"TaskbarCreated".as_ptr() as *const u8) };
         let window = Window::new_reentrant(
             false,
             State {
                 icon: Cell::new(icon),
+                double_click: Notification::new(POINT { x: 0, y: 0 }),
+                right_click: Notification::new(POINT { x: 0, y: 0 }),
             },
             move |state, msg| {
-                if msg.msg == MSG_ID_TRAY_ICON {
-                    // Forward the message to the main event loop.
-                    unsafe { PostMessageA(msg.hwnd, msg_id, msg.wparam, msg.lparam) };
-                    return Some(0);
-                }
+                let state = state.project_ref();
 
-                if msg.msg == msg_id_taskbar_created {
+                if msg.msg == MSG_ID_TRAY_ICON {
+                    let pt = POINT {
+                        x: (msg.wparam as i16).into(),
+                        y: ((msg.wparam >> 16) as i16).into(),
+                    };
+                    match msg.lparam as u32 {
+                        WM_LBUTTONDBLCLK => {
+                            state.double_click.send(pt);
+                        }
+                        WM_RBUTTONUP => {
+                            state.right_click.send(pt);
+                        }
+                        _ => {}
+                    }
+                    Some(0)
+                } else if msg.msg == msg_id_taskbar_created {
                     // Re-add the tray icon if explorer.exe has restarted.
                     add_tray_icon(msg.hwnd, state.icon.get());
-                    return Some(0);
+                    Some(0)
+                } else {
+                    None // Message not handled
                 }
-
-                None
             },
         )
         .unwrap();
@@ -57,6 +73,16 @@ impl TrayIcon {
     pub fn set_icon(&self, icon: HICON) {
         update_tray_icon(self.window.hwnd(), icon);
         self.window.shared_state().icon.set(icon);
+    }
+
+    pub async fn double_click(&self) -> POINT {
+        let state = self.window.shared_state().project_ref();
+        state.double_click.receive().await
+    }
+
+    pub async fn right_click(&self) -> POINT {
+        let state = self.window.shared_state().project_ref();
+        state.right_click.receive().await
     }
 }
 

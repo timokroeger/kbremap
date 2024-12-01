@@ -10,6 +10,9 @@ repository = "https://github.com/timokroeger/kbremap"
 [dependencies]
 anyhow = "1.0"
 encode_unicode = "1.0"
+futures-lite = { version = "2.5.0", default-features = false }
+lilos-list = "0.1.0"
+pin-project = "1.1.7"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
 toml = "0.8.12"
@@ -27,7 +30,7 @@ windows-sys = { version = "0.59.0", features = [
     "Win32_UI_TextServices",
     "Win32_UI_WindowsAndMessaging",
 ] }
-winmsg-executor = "0.1.1"
+winmsg-executor = "0.2.1"
 
 [build-dependencies]
 winresource = { version = "0.1.15", default-features = false }

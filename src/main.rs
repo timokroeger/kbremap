@@ -2,6 +2,7 @@
 #![cfg_attr(test, windows_subsystem = "console")]
 
 mod resources;
+mod util;
 mod winapi;
 
 use std::cell::Cell;
@@ -10,10 +11,10 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use anyhow::{anyhow, Context, Result};
+use futures_lite::future::FutureExt;
 use kbremap::{Config, KeyAction, ReadableConfig, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
-use winmsg_executor::{quit_message_loop, run_message_loop_with_dispatcher};
 
 use crate::winapi::{AutoStartEntry, Icon, KeyEvent, KeyType, KeyboardHook, PopupMenu, TrayIcon};
 
@@ -142,21 +143,15 @@ fn main() -> Result<()> {
     let icon_enabled = Icon::from_rc_numeric(resources::ICON_KEYBOARD);
     let icon_disabled = Icon::from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
 
-    // Arbitrary ID in the WM_APP range, used to identify which tray icon a message originates from.
-    const WM_APP_TRAYICON: u32 = WM_APP + 873;
-    let tray_icon = TrayIcon::new(WM_APP_TRAYICON, icon_enabled.0);
+    let tray_icon = TrayIcon::new(icon_enabled.0);
 
     let autostart = AutoStartEntry::new(c"kbremap");
 
     // Event loop required for the low-level keyboard hook and the tray icon.
-    run_message_loop_with_dispatcher(|msg| {
-        if msg.message != WM_APP_TRAYICON {
-            return false;
-        }
-
+    winmsg_executor::block_on(async move {
         // Enabled state can be changed by double click to the tray icon or from the context menu.
-        let enabled = matches!(hook_state.get(), HookState::Enabled | HookState::Active);
         let toggle_enabled = || {
+            let enabled = matches!(hook_state.get(), HookState::Enabled | HookState::Active);
             if enabled {
                 tray_icon.set_icon(icon_disabled.0);
                 hook_state.set(HookState::Disabled);
@@ -166,59 +161,68 @@ fn main() -> Result<()> {
             }
         };
 
-        let event = msg.lParam as u32;
-        if event == WM_LBUTTONDBLCLK {
-            toggle_enabled();
-            true
-        } else if event == WM_RBUTTONUP {
-            const MENU_STARTUP: u32 = 1;
-            const MENU_DEBUG: u32 = 2;
-            const MENU_DISABLE: u32 = 3;
-            const MENU_EXIT: u32 = 4;
-
-            let flag_checked = |condition| if condition { MF_CHECKED } else { 0 };
-            let flag_disabled = |condition| if condition { MF_DISABLED } else { 0 };
-
-            let menu = PopupMenu::new();
-            menu.add_entry(
-                MENU_STARTUP,
-                flag_checked(autostart.is_registered()),
-                c"Run at system startup",
-            );
-            menu.add_entry(
-                MENU_DEBUG,
-                flag_checked(winapi::console_check()) | flag_disabled(running_in_terminal),
-                c"Show debug output",
-            );
-            menu.add_entry(MENU_DISABLE, flag_checked(!enabled), c"Disable");
-            menu.add_entry(MENU_EXIT, 0, c"Exit");
-
-            match menu.show(msg.hwnd, msg.pt) {
-                Some(MENU_STARTUP) => {
-                    if autostart.is_registered() {
-                        autostart.remove();
-                    } else {
-                        autostart.register();
-                    }
-                }
-                Some(MENU_DEBUG) => {
-                    // Toggle console window to display debug logs.
-                    if winapi::console_check() {
-                        winapi::console_close()
-                    } else {
-                        winapi::console_open()
-                    }
-                }
-                Some(MENU_DISABLE) => toggle_enabled(),
-                Some(MENU_EXIT) => quit_message_loop(),
-                Some(_) => unreachable!(),
-                _ => {}
+        let left_click_fut = async {
+            loop {
+                tray_icon.double_click().await;
+                toggle_enabled();
             }
-            true
-        } else {
-            false
-        }
-    });
+        };
+        let right_click_fut = async {
+            loop {
+                let pt = tray_icon.right_click().await;
+                const MENU_STARTUP: u32 = 1;
+                const MENU_DEBUG: u32 = 2;
+                const MENU_DISABLE: u32 = 3;
+                const MENU_EXIT: u32 = 4;
+
+                let flag_checked = |condition| if condition { MF_CHECKED } else { 0 };
+                let flag_disabled = |condition| if condition { MF_DISABLED } else { 0 };
+
+                let menu = PopupMenu::new();
+                menu.add_entry(
+                    MENU_STARTUP,
+                    flag_checked(autostart.is_registered()),
+                    c"Run at system startup",
+                );
+                menu.add_entry(
+                    MENU_DEBUG,
+                    flag_checked(winapi::console_check()) | flag_disabled(running_in_terminal),
+                    c"Show debug output",
+                );
+                menu.add_entry(
+                    MENU_DISABLE,
+                    flag_checked(matches!(hook_state.get(), HookState::Disabled)),
+                    c"Disable",
+                );
+                menu.add_entry(MENU_EXIT, 0, c"Exit");
+
+                match menu.show(pt) {
+                    Some(MENU_STARTUP) => {
+                        if autostart.is_registered() {
+                            autostart.remove();
+                        } else {
+                            autostart.register();
+                        }
+                    }
+                    Some(MENU_DEBUG) => {
+                        // Toggle console window to display debug logs.
+                        if winapi::console_check() {
+                            winapi::console_close()
+                        } else {
+                            winapi::console_open()
+                        }
+                    }
+                    Some(MENU_DISABLE) => toggle_enabled(),
+                    Some(MENU_EXIT) => return,
+                    Some(_) => unreachable!(),
+                    _ => {}
+                }
+            }
+        };
+
+        left_click_fut.or(right_click_fut).await;
+    })
+    .unwrap();
 
     Ok(())
 }

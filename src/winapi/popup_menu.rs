@@ -3,6 +3,7 @@ use std::ptr;
 
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
+use winmsg_executor::util::Window;
 
 pub struct PopupMenu(HMENU);
 
@@ -19,16 +20,18 @@ impl PopupMenu {
         assert_ne!(result, 0);
     }
 
-    pub fn show(&self, hwnd: HWND, pt: POINT) -> Option<u32> {
+    pub fn show(&self, pt: POINT) -> Option<u32> {
+        // TrackPopupMenuEx requires a window handle to work even though it doesn't use it.
+        let dummy_window = Window::new_reentrant(true, (), |_, _| None).unwrap();
         unsafe {
             // Required for the menu to disappear when it loses focus.
-            SetForegroundWindow(hwnd);
+            SetForegroundWindow(dummy_window.hwnd());
             let id = TrackPopupMenuEx(
                 self.0,
                 TPM_BOTTOMALIGN | TPM_NONOTIFY | TPM_RETURNCMD,
                 pt.x,
                 pt.y,
-                hwnd,
+                dummy_window.hwnd(),
                 ptr::null(),
             );
             if id == 0 {
