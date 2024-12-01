@@ -1,26 +1,9 @@
-use std::ffi::CStr;
 use std::ptr;
 
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Storage::FileSystem::*;
 use windows_sys::Win32::System::Console::*;
-use windows_sys::Win32::System::Threading::CreateMutexA;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
-
-// Returns true when this process is the first instance with the given name.
-pub fn register_instance(name: &CStr) -> bool {
-    unsafe {
-        let handle = CreateMutexA(ptr::null(), 0, name.as_ptr().cast());
-        if handle.is_null() && GetLastError() == ERROR_ALREADY_EXISTS {
-            CloseHandle(handle);
-            false
-        } else {
-            // Intentionally leak the mutex object to protect this instance
-            // of the process.
-            true
-        }
-    }
-}
 
 // Attaches to the terminal when running from command line.
 // Returns true when a terminal to print stdout is available.
