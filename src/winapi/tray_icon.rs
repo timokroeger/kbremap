@@ -6,10 +6,12 @@ use windows_sys::Win32::UI::Shell::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use winmsg_executor::util::Window;
 
+use crate::winapi::StaticIcon;
+
 const MSG_ID_TRAY_ICON: u32 = WM_USER;
 
 struct State {
-    icon: Cell<HICON>,
+    icon: Cell<StaticIcon>,
 }
 
 pub struct TrayIcon {
@@ -17,7 +19,7 @@ pub struct TrayIcon {
 }
 
 impl TrayIcon {
-    pub fn new(msg_id: u32, icon: HICON) -> Self {
+    pub fn new(msg_id: u32, icon: StaticIcon) -> Self {
         assert!(
             (WM_APP..WM_APP + 0x4000).contains(&msg_id),
             "message must be in the WM_APP range"
@@ -54,17 +56,17 @@ impl TrayIcon {
         Self { window }
     }
 
-    pub fn set_icon(&self, icon: HICON) {
+    pub fn set_icon(&self, icon: StaticIcon) {
         update_tray_icon(self.window.hwnd(), icon);
         self.window.shared_state().icon.set(icon);
     }
 }
 
-fn add_tray_icon(hwnd: HWND, icon: HICON) {
+fn add_tray_icon(hwnd: HWND, icon: StaticIcon) {
     let mut notification_data = notification_data(hwnd);
     notification_data.uFlags = NIF_MESSAGE | NIF_ICON;
     notification_data.uCallbackMessage = MSG_ID_TRAY_ICON;
-    notification_data.hIcon = icon;
+    notification_data.hIcon = icon.handle();
     notification_data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
     unsafe {
         Shell_NotifyIconA(NIM_ADD, &notification_data);
@@ -72,10 +74,10 @@ fn add_tray_icon(hwnd: HWND, icon: HICON) {
     }
 }
 
-fn update_tray_icon(hwnd: HWND, icon: HICON) {
+fn update_tray_icon(hwnd: HWND, icon: StaticIcon) {
     let mut notification_data = notification_data(hwnd);
     notification_data.uFlags = NIF_ICON;
-    notification_data.hIcon = icon;
+    notification_data.hIcon = icon.handle();
     unsafe { Shell_NotifyIconA(NIM_MODIFY, &notification_data) };
 }
 
