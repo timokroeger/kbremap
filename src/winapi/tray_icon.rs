@@ -8,12 +8,13 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use winmsg_executor::util::Window;
 
 use crate::util::Notification;
+use crate::winapi::StaticIcon;
 
 const MSG_ID_TRAY_ICON: u32 = WM_USER;
 
 #[pin_project]
 struct State {
-    icon: Cell<HICON>,
+    icon: Cell<StaticIcon>,
     #[pin]
     double_click: Notification<POINT>,
     #[pin]
@@ -25,7 +26,7 @@ pub struct TrayIcon {
 }
 
 impl TrayIcon {
-    pub fn new(icon: HICON) -> Self {
+    pub fn new(icon: StaticIcon) -> Self {
         let msg_id_taskbar_created =
             unsafe { RegisterWindowMessageA(c"TaskbarCreated".as_ptr() as *const u8) };
         let window = Window::new_reentrant(
@@ -70,7 +71,7 @@ impl TrayIcon {
         Self { window }
     }
 
-    pub fn set_icon(&self, icon: HICON) {
+    pub fn set_icon(&self, icon: StaticIcon) {
         update_tray_icon(self.window.hwnd(), icon);
         self.window.shared_state().icon.set(icon);
     }
@@ -86,11 +87,11 @@ impl TrayIcon {
     }
 }
 
-fn add_tray_icon(hwnd: HWND, icon: HICON) {
+fn add_tray_icon(hwnd: HWND, icon: StaticIcon) {
     let mut notification_data = notification_data(hwnd);
     notification_data.uFlags = NIF_MESSAGE | NIF_ICON;
     notification_data.uCallbackMessage = MSG_ID_TRAY_ICON;
-    notification_data.hIcon = icon;
+    notification_data.hIcon = icon.handle();
     notification_data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
     unsafe {
         Shell_NotifyIconA(NIM_ADD, &notification_data);
@@ -98,10 +99,10 @@ fn add_tray_icon(hwnd: HWND, icon: HICON) {
     }
 }
 
-fn update_tray_icon(hwnd: HWND, icon: HICON) {
+fn update_tray_icon(hwnd: HWND, icon: StaticIcon) {
     let mut notification_data = notification_data(hwnd);
     notification_data.uFlags = NIF_ICON;
-    notification_data.hIcon = icon;
+    notification_data.hIcon = icon.handle();
     unsafe { Shell_NotifyIconA(NIM_MODIFY, &notification_data) };
 }
 

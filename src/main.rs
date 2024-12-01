@@ -11,12 +11,13 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use anyhow::{anyhow, Context, Result};
-use futures_lite::future::FutureExt;
 use kbremap::{Config, KeyAction, ReadableConfig, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-use crate::winapi::{AutoStartEntry, Icon, KeyEvent, KeyType, KeyboardHook, PopupMenu, TrayIcon};
+use crate::winapi::{
+    AutoStartEntry, KeyEvent, KeyType, KeyboardHook, PopupMenu, StaticIcon, TrayIcon,
+};
 
 fn config_path(config_file: &OsStr) -> Result<PathBuf> {
     let mut path_buf;
@@ -47,42 +48,71 @@ fn load_config() -> Result<Config> {
     Ok(Config::try_from(config)?)
 }
 
-#[derive(Debug, Clone, Copy)]
-enum HookState {
-    Disabled,
-    Enabled,
-    Active,
+struct App {
+    running_in_terminal: bool,
+    autostart: AutoStartEntry<'static>,
+    tray_icon: TrayIcon,
+    enabled: Cell<bool>,
+}
+
+impl App {
+    fn new() -> Self {
+        Self {
+            // Display debug and panic output when launched from a terminal.
+            // Not only checks if we are running from a terminal but also attaches to it.
+            running_in_terminal: winapi::console_check(),
+            autostart: AutoStartEntry::new(c"kbremap"),
+            tray_icon: TrayIcon::new(StaticIcon::from_rc_numeric(resources::ICON_KEYBOARD)),
+            enabled: Cell::new(true),
+        }
+    }
+
+    fn toggle_autostart(&self) {
+        if self.autostart.is_registered() {
+            self.autostart.remove();
+        } else {
+            self.autostart.register();
+        }
+    }
+
+    fn toggle_debug_console(&self) {
+        if winapi::console_check() {
+            winapi::console_close();
+        } else {
+            winapi::console_open();
+        }
+    }
+
+    fn toggle_enabled(&self) {
+        if self.enabled.get() {
+            self.tray_icon
+                .set_icon(StaticIcon::from_rc_numeric(resources::ICON_KEYBOARD_DELETE));
+            self.enabled.set(false);
+        } else {
+            self.tray_icon
+                .set_icon(StaticIcon::from_rc_numeric(resources::ICON_KEYBOARD));
+            self.enabled.set(true);
+        }
+    }
 }
 
 fn main() -> Result<()> {
-    // Display debug and panic output when launched from a terminal.
-    // Not only checks if we are running from a terminal but also attaches to it.
-    let running_in_terminal = winapi::console_check();
-
     // Prevent duplicate instances if windows re-runs autostarts when rebooting after OS updates.
     let current_exe = env::current_exe()?;
     let instance_key = CString::new(current_exe.to_string_lossy().as_bytes())?;
     if !winapi::register_instance(&instance_key) {
-        return Err(anyhow!("already running with the same configuration"));
+        return Err(anyhow!("another instance is already running"));
     }
+
+    let app: &App = Box::leak(Box::new(App::new()));
 
     let config = load_config()?;
     let mut kb = VirtualKeyboard::new(config.layout);
-
-    // Shared state between the keyboard hook and the tray icon UI code.
-    let hook_state: &Cell<HookState> = Box::leak(Box::new(Cell::new(HookState::Active)));
-
     let _kbhook = KeyboardHook::set(move |mut key_event| {
-        match hook_state.get() {
-            HookState::Disabled => {
-                println!("{} forwarded because remapping is disabled", key_event);
-                return false;
-            }
-            HookState::Enabled => {
-                kb.reset();
-                hook_state.set(HookState::Active);
-            }
-            HookState::Active => {}
+        if !app.enabled.get() {
+            kb.reset();
+            println!("{} forwarded because remapping is disabled", key_event);
+            return false;
         }
 
         let remap = if key_event.up {
@@ -137,90 +167,48 @@ fn main() -> Result<()> {
         true
     });
 
-    // UI code
-
-    // Load resources
-    let icon_enabled = Icon::from_rc_numeric(resources::ICON_KEYBOARD);
-    let icon_disabled = Icon::from_rc_numeric(resources::ICON_KEYBOARD_DELETE);
-
-    let tray_icon = TrayIcon::new(icon_enabled.0);
-
-    let autostart = AutoStartEntry::new(c"kbremap");
+    winmsg_executor::spawn(async move {
+        loop {
+            app.tray_icon.double_click().await;
+            app.toggle_enabled();
+        }
+    });
 
     // Event loop required for the low-level keyboard hook and the tray icon.
     winmsg_executor::block_on(async move {
-        // Enabled state can be changed by double click to the tray icon or from the context menu.
-        let toggle_enabled = || {
-            let enabled = matches!(hook_state.get(), HookState::Enabled | HookState::Active);
-            if enabled {
-                tray_icon.set_icon(icon_disabled.0);
-                hook_state.set(HookState::Disabled);
-            } else {
-                tray_icon.set_icon(icon_enabled.0);
-                hook_state.set(HookState::Enabled);
+        loop {
+            let pt = app.tray_icon.right_click().await;
+            const MENU_STARTUP: u32 = 1;
+            const MENU_DEBUG: u32 = 2;
+            const MENU_DISABLE: u32 = 3;
+            const MENU_EXIT: u32 = 4;
+
+            let flag_checked = |condition| if condition { MF_CHECKED } else { 0 };
+            let flag_disabled = |condition| if condition { MF_DISABLED } else { 0 };
+
+            let menu = PopupMenu::new();
+            menu.add_entry(
+                MENU_STARTUP,
+                flag_checked(app.autostart.is_registered()),
+                c"Run at system startup",
+            );
+            menu.add_entry(
+                MENU_DEBUG,
+                flag_checked(winapi::console_check()) | flag_disabled(app.running_in_terminal),
+                c"Show debug output",
+            );
+            menu.add_entry(MENU_DISABLE, flag_checked(!app.enabled.get()), c"Disable");
+            menu.add_entry(MENU_EXIT, 0, c"Exit");
+
+            match menu.show(pt) {
+                Some(MENU_STARTUP) => app.toggle_autostart(),
+                Some(MENU_DEBUG) => app.toggle_debug_console(),
+                Some(MENU_DISABLE) => app.toggle_enabled(),
+                Some(MENU_EXIT) => return,
+                Some(_) => unreachable!(),
+                _ => {}
             }
-        };
-
-        let left_click_fut = async {
-            loop {
-                tray_icon.double_click().await;
-                toggle_enabled();
-            }
-        };
-        let right_click_fut = async {
-            loop {
-                let pt = tray_icon.right_click().await;
-                const MENU_STARTUP: u32 = 1;
-                const MENU_DEBUG: u32 = 2;
-                const MENU_DISABLE: u32 = 3;
-                const MENU_EXIT: u32 = 4;
-
-                let flag_checked = |condition| if condition { MF_CHECKED } else { 0 };
-                let flag_disabled = |condition| if condition { MF_DISABLED } else { 0 };
-
-                let menu = PopupMenu::new();
-                menu.add_entry(
-                    MENU_STARTUP,
-                    flag_checked(autostart.is_registered()),
-                    c"Run at system startup",
-                );
-                menu.add_entry(
-                    MENU_DEBUG,
-                    flag_checked(winapi::console_check()) | flag_disabled(running_in_terminal),
-                    c"Show debug output",
-                );
-                menu.add_entry(
-                    MENU_DISABLE,
-                    flag_checked(matches!(hook_state.get(), HookState::Disabled)),
-                    c"Disable",
-                );
-                menu.add_entry(MENU_EXIT, 0, c"Exit");
-
-                match menu.show(pt) {
-                    Some(MENU_STARTUP) => {
-                        if autostart.is_registered() {
-                            autostart.remove();
-                        } else {
-                            autostart.register();
-                        }
-                    }
-                    Some(MENU_DEBUG) => {
-                        // Toggle console window to display debug logs.
-                        if winapi::console_check() {
-                            winapi::console_close()
-                        } else {
-                            winapi::console_open()
-                        }
-                    }
-                    Some(MENU_DISABLE) => toggle_enabled(),
-                    Some(MENU_EXIT) => return,
-                    Some(_) => unreachable!(),
-                    _ => {}
-                }
-            }
-        };
-
-        left_click_fut.or(right_click_fut).await;
+        }
     })
     .unwrap();
 

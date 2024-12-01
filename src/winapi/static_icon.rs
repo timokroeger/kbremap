@@ -3,9 +3,10 @@ use std::ptr;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-pub struct Icon(pub HICON);
+#[derive(Debug, Clone, Copy)]
+pub struct StaticIcon(HICON);
 
-impl Icon {
+impl StaticIcon {
     pub fn from_rc_numeric(id: u16) -> Self {
         let hicon = unsafe {
             LoadImageA(
@@ -14,16 +15,14 @@ impl Icon {
                 IMAGE_ICON,
                 0,
                 0,
-                LR_DEFAULTSIZE,
+                LR_DEFAULTSIZE | LR_SHARED,
             )
         };
         assert!(!hicon.is_null(), "icon resource {} not found", id);
         Self(hicon)
     }
-}
 
-impl Drop for Icon {
-    fn drop(&mut self) {
-        unsafe { DestroyIcon(self.0) };
+    pub fn handle(&self) -> HICON {
+        self.0
     }
 }
