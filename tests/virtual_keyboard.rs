@@ -20,7 +20,7 @@ fn layer_activation() {
     layout.add_key(0x20, b, Character('2'));
     layout.add_key(0x20, c, Character('3'));
 
-    let mut kb = VirtualKeyboard::new(&layout);
+    let mut kb = VirtualKeyboard::new(layout);
 
     // L0
     assert_eq!(kb.press_key(0x20), Some(Character('0')));
@@ -90,7 +90,7 @@ fn accidental_shift_lock_issue25() {
     layout.add_modifier(0xE036, base, shift);
     layout.add_key(0xE036, base, VirtualKey(0xA1));
 
-    let mut kb = VirtualKeyboard::new(&layout);
+    let mut kb = VirtualKeyboard::new(layout);
 
     assert_eq!(kb.press_key(0xE036), Some(VirtualKey(0xA1)));
     assert_eq!(kb.press_key(0x002A), Some(VirtualKey(0xA0)));
@@ -115,7 +115,7 @@ fn masked_modifier_on_base_layer() {
     layout.add_key(0xBB, b, Character('B'));
     layout.add_key(0xCC, c, Character('C')); // not reachable from base
 
-    let mut kb = VirtualKeyboard::new(&layout);
+    let mut kb = VirtualKeyboard::new(layout);
 
     // "B" does not exist on base layer
     assert_eq!(kb.press_key(0xBB), None);
@@ -192,7 +192,7 @@ fn layer_lock() {
 
     layout.add_key(0xFF, c, Character('C'));
 
-    let mut kb = VirtualKeyboard::new(&layout);
+    let mut kb = VirtualKeyboard::new(layout);
 
     // Lock layer a
     assert_eq!(kb.press_key(0x0A), Some(Ignore));
@@ -261,7 +261,7 @@ fn transparency() {
     layout.add_key(0x01, c, Character('C'));
     layout.add_key(0x04, c, Character('C'));
 
-    let mut kb = VirtualKeyboard::new(&layout);
+    let mut kb = VirtualKeyboard::new(layout);
 
     // Layer a
     assert_eq!(kb.press_key(0x01), Some(Character('A')));
@@ -358,7 +358,7 @@ fn layer_lock_shared_path() {
     layout.add_layer_lock(0xCD, d, d);
     layout.add_key(0xFF, d, Character('X'));
 
-    let mut kb = VirtualKeyboard::new(&layout);
+    let mut kb = VirtualKeyboard::new(layout);
 
     // Just make sure it does not panic.
     kb.press_key(0x0A);
@@ -394,7 +394,7 @@ fn layer_lock_caps() {
     // shift layer
     layout.add_key(0xFF, shift, Character('X'));
 
-    let mut kb = VirtualKeyboard::new(&layout);
+    let mut kb = VirtualKeyboard::new(layout);
 
     assert_eq!(kb.press_key(0xFF), Some(Character('x')));
     assert_eq!(kb.release_key(0xFF), Some(Character('x')));
@@ -443,7 +443,7 @@ fn layer_lock_caps_neo() {
 
     layout.add_key(0xFF, shift, Character('X'));
 
-    let mut kb = VirtualKeyboard::new(&layout);
+    let mut kb = VirtualKeyboard::new(layout);
 
     // base layer
     assert_eq!(kb.press_key(0xFF), Some(Character('x')));
