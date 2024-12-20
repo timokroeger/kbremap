@@ -36,6 +36,7 @@ windows-sys = { version = "0.59.0", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 winmsg-executor = "0.2.1"
+crossbeam-queue = "0.3.12"
 
 [build-dependencies]
 postcard = { version = "1.1", default-features = false, features = ["use-std"]}

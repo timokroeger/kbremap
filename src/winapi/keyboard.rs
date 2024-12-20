@@ -3,11 +3,13 @@
 use std::cell::Cell;
 use std::fmt::Display;
 use std::marker::PhantomData;
+use std::sync::LazyLock;
 use std::{mem, ptr};
 
+use crossbeam_queue::ArrayQueue;
 use encode_unicode::CharExt;
 use windows_sys::Win32::Foundation::*;
-use windows_sys::Win32::System::Threading::{TrySubmitThreadpoolCallback, PTP_CALLBACK_INSTANCE};
+use windows_sys::Win32::System::Threading::*;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -184,21 +186,30 @@ pub fn send_key(key: KeyEvent) {
     // `SendInput()` from there. That way our hook is unaffected by other
     // faulty hooks and Windows can correctly remove the offending hooks from
     // the hook chain.
-    unsafe {
-        TrySubmitThreadpoolCallback(
-            Some(send_key_callback),
-            Box::into_raw(Box::new(key)) as *mut _,
-            ptr::null(),
-        );
-    }
-}
 
-unsafe extern "system" fn send_key_callback(
-    _instance: PTP_CALLBACK_INSTANCE,
-    context: *mut core::ffi::c_void,
-) {
-    unsafe {
-        let key = Box::from_raw(context as *mut KeyEvent);
+    // 128 slots in the queue should be plenty for sending keys assuming that a
+    // human is not able to press more keys than available on a typical keyboard
+    // within a sub milliseconds timespan it takes to dispatch the send thread.
+    // This assumption might not hold when sombody implements macros which makes
+    // a single input key press trigger many key sends at once.
+    struct SendKeyResources(ArrayQueue<KeyEvent>, PTP_WORK);
+    static SEND_KEY_RESOURCES: LazyLock<SendKeyResources> = LazyLock::new(|| {
+        let work = unsafe {
+            CreateThreadpoolWork(Some(send_key_callback), ptr::null_mut(), ptr::null_mut())
+        };
+        SendKeyResources(ArrayQueue::new(128), work)
+    });
+
+    unsafe extern "system" fn send_key_callback(
+        _instance: PTP_CALLBACK_INSTANCE,
+        _context: *mut core::ffi::c_void,
+        _work: PTP_WORK,
+    ) {
+        let SendKeyResources(queue, _) = &*SEND_KEY_RESOURCES;
+        let Some(key) = queue.pop() else {
+            return;
+        };
+
         let mut inputs: [INPUT; 2] = mem::zeroed();
 
         let n_inputs = match key.key {
@@ -238,6 +249,11 @@ unsafe extern "system" fn send_key_callback(
             inputs.as_mut_ptr(),
             mem::size_of::<INPUT>() as _,
         );
+    }
+
+    let SendKeyResources(queue, tp_work) = &*SEND_KEY_RESOURCES;
+    if queue.push(key).is_ok() {
+        unsafe { SubmitThreadpoolWork(tp_work) };
     }
 }
 
