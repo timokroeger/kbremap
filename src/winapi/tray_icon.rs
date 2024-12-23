@@ -5,6 +5,7 @@ use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::UI::Shell::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use winmsg_executor::util::Window;
+use winmsg_executor::util::WindowType;
 
 use crate::winapi::StaticIcon;
 
@@ -27,8 +28,8 @@ impl TrayIcon {
 
         let msg_id_taskbar_created =
             unsafe { RegisterWindowMessageA(c"TaskbarCreated".as_ptr() as *const u8) };
-        let window = Window::new_reentrant(
-            false,
+        let window = Window::new(
+            WindowType::MessageOnly,
             State {
                 icon: Cell::new(icon),
             },
@@ -58,7 +59,7 @@ impl TrayIcon {
 
     pub fn set_icon(&self, icon: StaticIcon) {
         update_tray_icon(self.window.hwnd(), icon);
-        self.window.shared_state().icon.set(icon);
+        self.window.state().icon.set(icon);
     }
 }
 

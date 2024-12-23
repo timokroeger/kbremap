@@ -13,7 +13,7 @@ use anyhow::{Context, Result};
 use kbremap::{Config, KeyAction, ReadableConfig, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
-use winmsg_executor::{quit_message_loop, run_message_loop_with_dispatcher};
+use winmsg_executor::{FilterResult, MessageLoop};
 
 use crate::winapi::{
     AutoStartEntry, KeyEvent, KeyType, KeyboardHook, PopupMenu, StaticIcon, TrayIcon,
@@ -167,15 +167,14 @@ fn main() -> Result<()> {
     });
 
     // Event loop required for the low-level keyboard hook and the tray icon.
-    run_message_loop_with_dispatcher(|msg| {
+    MessageLoop::run(|msg_loop, msg| {
         if msg.message != WM_APP_TRAYICON {
-            return false;
+            return FilterResult::Forward;
         }
 
         let event = msg.lParam as u32;
         if event == WM_LBUTTONDBLCLK {
             app.toggle_enabled();
-            true
         } else if event == WM_CONTEXTMENU {
             const MENU_STARTUP: u32 = 1;
             const MENU_DEBUG: u32 = 2;
@@ -203,14 +202,13 @@ fn main() -> Result<()> {
                 Some(MENU_STARTUP) => app.toggle_autostart(),
                 Some(MENU_DEBUG) => app.toggle_debug_console(),
                 Some(MENU_DISABLE) => app.toggle_enabled(),
-                Some(MENU_EXIT) => quit_message_loop(),
+                Some(MENU_EXIT) => msg_loop.quit_when_idle(),
                 Some(_) => unreachable!(),
                 _ => {}
             }
-            true
-        } else {
-            false
         }
+
+        FilterResult::Drop
     });
 
     Ok(())

@@ -27,7 +27,7 @@ windows-sys = { version = "0.59.0", features = [
     "Win32_UI_TextServices",
     "Win32_UI_WindowsAndMessaging",
 ] }
-winmsg-executor = "0.1.1"
+winmsg-executor = "0.3.0"
 
 [build-dependencies]
 winresource = { version = "0.1.15", default-features = false }
