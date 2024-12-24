@@ -1,19 +1,22 @@
 //! Safe abstraction over the low-level windows keyboard hook API.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::fmt::Display;
+use std::future::poll_fn;
 use std::marker::PhantomData;
+use std::task::{Poll, Waker};
 use std::{mem, ptr};
 
 use encode_unicode::CharExt;
 use windows_sys::Win32::Foundation::*;
-use windows_sys::Win32::System::Threading::{TrySubmitThreadpoolCallback, PTP_CALLBACK_INSTANCE};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 thread_local! {
     /// Stores a type-erased pointer to the hook closure.
     static HOOK: Cell<*mut ()> = const { Cell::new(ptr::null_mut()) };
+    /// Buffer key events to prevent blocking the low-level keyboard hook.
+    static KEY_QUEUE: RefCell<KeyQueue> = const { RefCell::new(KeyQueue::new()) };
 }
 
 /// Wrapper for the low-level keyboard hook API.
@@ -35,6 +38,10 @@ where
     /// nothing happened. To ignore a key event or to remap it to another
     /// key, return `true` and use [`send_key()`].
     ///
+    /// A message loop must be running on the same thread for the hook to work.
+    ///
+    /// # Panics
+    ///
     /// Panics when a hook is already registered from the same thread.
     #[must_use = "The hook will immediately be unregistered and not work."]
     pub fn set(callback: F) -> Self {
@@ -42,6 +49,8 @@ where
             HOOK.get().is_null(),
             "Only one keyboard hook can be registered per thread."
         );
+
+        winmsg_executor::spawn_local(send_key_task());
 
         let callback = Box::into_raw(Box::new(callback));
         HOOK.set(callback as *mut ());
@@ -64,11 +73,12 @@ impl<F> Drop for KeyboardHook<F> {
         unsafe {
             UnhookWindowsHookEx(self.handle);
             drop(Box::from_raw(HOOK.replace(ptr::null_mut()) as *mut F));
+            KEY_QUEUE.with(|queue| queue.borrow_mut().close());
         }
     }
 }
 
-/// Type of a key event.
+/// Key event type.
 #[derive(Debug, Clone, Copy)]
 pub enum KeyType {
     /// Virtual key as defined by the layout set by Windows.
@@ -177,28 +187,71 @@ where
     CallNextHookEx(ptr::null_mut(), code, wparam, lparam)
 }
 
-/// Sends a virtual key event.
-pub fn send_key(key: KeyEvent) {
-    // `SendInput()` may block if a slow/faulty low-level keyboard hook is
-    // registered. As a fix, forwards the key event to another thread to call
-    // `SendInput()` from there. That way our hook is unaffected by other
-    // faulty hooks and Windows can correctly remove the offending hooks from
-    // the hook chain.
-    unsafe {
-        TrySubmitThreadpoolCallback(
-            Some(send_key_callback),
-            Box::into_raw(Box::new(key)) as *mut _,
-            ptr::null(),
-        );
+struct KeyQueue {
+    key_events: Vec<KeyEvent>,
+    waker: Option<Waker>,
+    closed: bool,
+}
+
+impl KeyQueue {
+    const fn new() -> Self {
+        Self {
+            key_events: Vec::new(),
+            waker: None,
+            closed: false,
+        }
+    }
+
+    fn enqueue(&mut self, key: KeyEvent) {
+        self.key_events.push(key);
+        if let Some(waker) = self.waker.take() {
+            waker.wake();
+        }
+    }
+
+    fn close(&mut self) {
+        self.closed = true;
+        if let Some(waker) = self.waker.take() {
+            waker.wake();
+        }
     }
 }
 
-unsafe extern "system" fn send_key_callback(
-    _instance: PTP_CALLBACK_INSTANCE,
-    context: *mut core::ffi::c_void,
-) {
+/// Sends a virtual key event.
+// TODO: Send keys directly when not called from within the keyboard hook.
+pub fn send_key(key: KeyEvent) {
+    // `SendInput()` may block if a slow/faulty low-level keyboard hook is
+    // registered. As a fix, buffer the key event and call `SendInput()` from
+    // an async task running on our threads message loop (which only can run
+    // after we have returned from the hook procedure).
+    // That way our hook is unaffected by other faulty hooks and Windows can
+    // correctly remove the offending hooks from the hook chain.
+    KEY_QUEUE.with(|queue| queue.borrow_mut().enqueue(key));
+}
+
+async fn send_key_task() {
+    poll_fn(|cx| {
+        KEY_QUEUE.with_borrow_mut(|queue| {
+            if queue.closed {
+                return Poll::Ready(());
+            }
+
+            for key in queue.key_events.drain(..) {
+                send_input(key);
+            }
+
+            // We are the only task waiting for key events.
+            debug_assert!(queue.waker.is_none());
+            queue.waker = Some(cx.waker().clone());
+            Poll::Pending
+        })
+    })
+    .await;
+}
+
+// Delayed handler called by the async task to actually send the key event.
+fn send_input(key: KeyEvent) {
     unsafe {
-        let key = Box::from_raw(context as *mut KeyEvent);
         let mut inputs: [INPUT; 2] = mem::zeroed();
 
         let n_inputs = match key.key {
