@@ -33,7 +33,7 @@ pub fn console_close() {
 fn disable_quick_edit_mode() {
     unsafe {
         let console = CreateFileA(
-            "CONIN$\0".as_ptr() as _,
+            c"CONIN$".as_ptr() as _,
             GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             ptr::null(),

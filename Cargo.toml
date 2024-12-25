@@ -12,7 +12,7 @@ anyhow = "1.0"
 encode_unicode = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
-toml = "0.8.12"
+toml = { version = "0.8.19", default-features = false, features = ["parse"] }
 windows-sys = { version = "0.59.0", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
@@ -30,7 +30,7 @@ windows-sys = { version = "0.59.0", features = [
 winmsg-executor = "0.3.0"
 
 [build-dependencies]
-winresource = { version = "0.1.15", default-features = false }
+winresource = { version = "0.1.19", default-features = false }
 
 # Size optimized build:
 # `cargo +nightly build --release -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target x86_64-pc-windows-msvc`
