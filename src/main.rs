@@ -15,9 +15,7 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use winmsg_executor::{FilterResult, MessageLoop};
 
-use crate::winapi::{
-    AutoStartEntry, KeyEvent, KeyType, KeyboardHook, PopupMenu, StaticIcon, TrayIcon,
-};
+use crate::winapi::{AutoStartEntry, KeyEvent, KeyType, PopupMenu, StaticIcon, TrayIcon};
 
 // Arbitrary ID in the WM_APP range, used to identify which tray icon a message originates from.
 const WM_APP_TRAYICON: u32 = WM_APP + 873;
@@ -107,7 +105,7 @@ fn main() -> Result<()> {
 
     let config = load_config()?;
     let mut kb = VirtualKeyboard::new(config.layout);
-    let _kbhook = KeyboardHook::set(move |mut key_event| {
+    winapi::register_keyboard_hook(move |mut key_event| {
         if !app.enabled.get() {
             kb.reset();
             println!("{} forwarded because remapping is disabled", key_event);

@@ -3,7 +3,6 @@
 use std::cell::{Cell, RefCell};
 use std::fmt::Display;
 use std::future::poll_fn;
-use std::marker::PhantomData;
 use std::task::{Poll, Waker};
 use std::{mem, ptr};
 
@@ -19,63 +18,38 @@ thread_local! {
     static KEY_QUEUE: RefCell<KeyQueue> = const { RefCell::new(KeyQueue::new()) };
 }
 
-/// Wrapper for the low-level keyboard hook API.
-/// Automatically unregisters the hook when dropped.
-pub struct KeyboardHook<F> {
-    handle: HHOOK,
-    // Required for drop to properly drop the closure.
-    _closure_type: PhantomData<F>,
-}
-
-impl<F> KeyboardHook<F>
+/// Sets the low-level keyboard hook for this thread.
+///
+/// The closure receives key press and key release events. When the closure
+/// returns `false`, the key event is not modified and forwarded as if
+/// nothing happened. To ignore a key event or to remap it to another
+/// key, return `true` and use [`send_key()`].
+///
+/// A message loop must be running on the same thread for the hook to work.
+///
+/// # Panics
+///
+/// Panics when a hook is already registered from the same thread.
+pub fn register_keyboard_hook<F>(callback: F)
 where
     F: FnMut(KeyEvent) -> bool + 'static,
 {
-    /// Sets the low-level keyboard hook for this thread.
-    ///
-    /// The closure receives key press and key release events. When the closure
-    /// returns `false`, the key event is not modified and forwarded as if
-    /// nothing happened. To ignore a key event or to remap it to another
-    /// key, return `true` and use [`send_key()`].
-    ///
-    /// A message loop must be running on the same thread for the hook to work.
-    ///
-    /// # Panics
-    ///
-    /// Panics when a hook is already registered from the same thread.
-    #[must_use = "The hook will immediately be unregistered and not work."]
-    pub fn set(callback: F) -> Self {
-        assert!(
-            HOOK.get().is_null(),
-            "Only one keyboard hook can be registered per thread."
-        );
+    assert!(
+        HOOK.get().is_null(),
+        "Only one keyboard hook can be registered per thread."
+    );
 
-        winmsg_executor::spawn_local(send_key_task());
+    winmsg_executor::spawn_local(send_key_task());
 
-        let callback = Box::into_raw(Box::new(callback));
-        HOOK.set(callback as *mut ());
+    let callback = Box::into_raw(Box::new(callback));
+    HOOK.set(callback as *mut ());
 
-        let handle =
-            unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc::<F>), ptr::null_mut(), 0) };
-        assert!(
-            !handle.is_null(),
-            "Failed to install low-level keyboard hook."
-        );
-        KeyboardHook {
-            handle,
-            _closure_type: PhantomData,
-        }
-    }
-}
-
-impl<F> Drop for KeyboardHook<F> {
-    fn drop(&mut self) {
-        unsafe {
-            UnhookWindowsHookEx(self.handle);
-            drop(Box::from_raw(HOOK.replace(ptr::null_mut()) as *mut F));
-            KEY_QUEUE.with(|queue| queue.borrow_mut().close());
-        }
-    }
+    let handle =
+        unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc::<F>), ptr::null_mut(), 0) };
+    assert!(
+        !handle.is_null(),
+        "Failed to install low-level keyboard hook."
+    );
 }
 
 /// Key event type.
@@ -190,7 +164,6 @@ where
 struct KeyQueue {
     key_events: Vec<KeyEvent>,
     waker: Option<Waker>,
-    closed: bool,
 }
 
 impl KeyQueue {
@@ -198,19 +171,11 @@ impl KeyQueue {
         Self {
             key_events: Vec::new(),
             waker: None,
-            closed: false,
         }
     }
 
     fn enqueue(&mut self, key: KeyEvent) {
         self.key_events.push(key);
-        if let Some(waker) = self.waker.take() {
-            waker.wake();
-        }
-    }
-
-    fn close(&mut self) {
-        self.closed = true;
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }
@@ -232,10 +197,6 @@ pub fn send_key(key: KeyEvent) {
 async fn send_key_task() {
     poll_fn(|cx| {
         KEY_QUEUE.with_borrow_mut(|queue| {
-            if queue.closed {
-                return Poll::Ready(());
-            }
-
             for key in queue.key_events.drain(..) {
                 send_input(key);
             }
@@ -243,7 +204,7 @@ async fn send_key_task() {
             // We are the only task waiting for key events.
             debug_assert!(queue.waker.is_none());
             queue.waker = Some(cx.waker().clone());
-            Poll::Pending
+            Poll::Pending::<()>
         })
     })
     .await;
