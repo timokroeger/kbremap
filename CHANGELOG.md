@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+- XXX
+
+## [2.0.1] - 2024-12-31
+
+- Refactoring in almost all win32 API abstractions
+- Do not display empty tray icon tooltip on Windows 11
+- Refactor main app logic for clarity
+- Update dependencies
+
 ## [2.0.0] - 2024-07-03
 
 ### Breaking Configuration Changes
@@ -109,7 +120,8 @@
 Initial Release
 
 
-[Unreleased]: https://github.com/timokroeger/kbremap/compare/v2.0.0..HEAD
+[Unreleased]: https://github.com/timokroeger/kbremap/compare/v2.0.1..HEAD
+[2.0.1]: https://github.com/timokroeger/kbremap/compare/v2.0.0..v2.0.1
 [2.0.0]: https://github.com/timokroeger/kbremap/compare/v1.6.0..v2.0.0
 [1.6.0]: https://github.com/timokroeger/kbremap/compare/v1.5.1..v1.6.0
 [1.5.1]: https://github.com/timokroeger/kbremap/compare/v1.5.0..v1.5.1
