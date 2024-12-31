@@ -6,19 +6,17 @@ mod winapi;
 
 use std::cell::Cell;
 use std::ffi::OsStr;
+use std::future::pending;
 use std::path::{Path, PathBuf};
-use std::{env, fs};
+use std::{env, fs, process};
 
 use anyhow::{Context, Result};
 use kbremap::{Config, KeyAction, ReadableConfig, VirtualKeyboard};
+use winapi::TrayIconEvent;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
-use winmsg_executor::{FilterResult, MessageLoop};
 
-use crate::winapi::{AutoStartEntry, KeyEvent, KeyType, PopupMenu, StaticIcon, TrayIcon};
-
-// Arbitrary ID in the WM_APP range, used to identify which tray icon a message originates from.
-const WM_APP_TRAYICON: u32 = WM_APP + 873;
+use crate::winapi::{AutoStartEntry, KeyEvent, KeyType, StaticIcon, TrayIcon};
 
 fn config_path(config_file: &OsStr) -> Result<PathBuf> {
     let mut path_buf;
@@ -63,10 +61,7 @@ impl App {
             // Not only checks if we are running from a terminal but also attaches to it.
             running_in_terminal: winapi::console_check(),
             autostart: AutoStartEntry::new(c"kbremap"),
-            tray_icon: TrayIcon::new(
-                WM_APP_TRAYICON,
-                StaticIcon::from_rc_numeric(resources::ICON_KEYBOARD),
-            ),
+            tray_icon: TrayIcon::new(StaticIcon::from_rc_numeric(resources::ICON_KEYBOARD)),
             enabled: Cell::new(true),
         }
     }
@@ -164,50 +159,43 @@ fn main() -> Result<()> {
         true
     });
 
-    // Event loop required for the low-level keyboard hook and the tray icon.
-    MessageLoop::run(|msg_loop, msg| {
-        if msg.message != WM_APP_TRAYICON {
-            return FilterResult::Forward;
-        }
+    const MENU_STARTUP: u32 = 1;
+    const MENU_DEBUG: u32 = 2;
+    const MENU_DISABLE: u32 = 3;
+    const MENU_EXIT: u32 = 4;
 
-        let event = msg.lParam as u32;
-        if event == WM_LBUTTONDBLCLK {
-            app.toggle_enabled();
-        } else if event == WM_CONTEXTMENU {
-            const MENU_STARTUP: u32 = 1;
-            const MENU_DEBUG: u32 = 2;
-            const MENU_DISABLE: u32 = 3;
-            const MENU_EXIT: u32 = 4;
+    app.tray_icon.on_menu(|menu| {
+        let flag_checked = |condition| if condition { MF_CHECKED } else { 0 };
+        let flag_disabled = |condition| if condition { MF_DISABLED } else { 0 };
 
-            let flag_checked = |condition| if condition { MF_CHECKED } else { 0 };
-            let flag_disabled = |condition| if condition { MF_DISABLED } else { 0 };
-
-            let menu = PopupMenu::new();
-            menu.add_entry(
-                MENU_STARTUP,
-                flag_checked(app.autostart.is_registered()),
-                c"Run at system startup",
-            );
-            menu.add_entry(
-                MENU_DEBUG,
-                flag_checked(winapi::console_check()) | flag_disabled(app.running_in_terminal),
-                c"Show debug output",
-            );
-            menu.add_entry(MENU_DISABLE, flag_checked(!app.enabled.get()), c"Disable");
-            menu.add_entry(MENU_EXIT, 0, c"Exit");
-
-            match menu.show(msg.hwnd, msg.pt) {
-                Some(MENU_STARTUP) => app.toggle_autostart(),
-                Some(MENU_DEBUG) => app.toggle_debug_console(),
-                Some(MENU_DISABLE) => app.toggle_enabled(),
-                Some(MENU_EXIT) => msg_loop.quit_when_idle(),
-                Some(_) => unreachable!(),
-                _ => {}
-            }
-        }
-
-        FilterResult::Drop
+        menu.add_entry(
+            MENU_STARTUP,
+            flag_checked(app.autostart.is_registered()),
+            c"Run at system startup",
+        );
+        menu.add_entry(
+            MENU_DEBUG,
+            flag_checked(winapi::console_check()) | flag_disabled(app.running_in_terminal),
+            c"Show debug output",
+        );
+        menu.add_entry(MENU_DISABLE, flag_checked(!app.enabled.get()), c"Disable");
+        menu.add_entry(MENU_EXIT, 0, c"Exit");
     });
+
+    app.tray_icon.on_event(|event| {
+        match event {
+            TrayIconEvent::Click => {} // ignore
+            TrayIconEvent::DoubleClick => app.toggle_enabled(),
+            TrayIconEvent::MenuItem(MENU_STARTUP) => app.toggle_autostart(),
+            TrayIconEvent::MenuItem(MENU_DEBUG) => app.toggle_debug_console(),
+            TrayIconEvent::MenuItem(MENU_DISABLE) => app.toggle_enabled(),
+            TrayIconEvent::MenuItem(MENU_EXIT) => process::exit(0),
+            TrayIconEvent::MenuItem(_) => unreachable!(),
+        }
+    });
+
+    // Event loop required for the low-level keyboard hook and the tray icon.
+    winmsg_executor::block_on(pending::<()>());
 
     Ok(())
 }
