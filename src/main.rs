@@ -5,45 +5,56 @@ mod resources;
 mod winapi;
 
 use std::cell::Cell;
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
-use std::{env, fs, process};
+use std::{env, process};
 
-use anyhow::{Context, Result};
-use kbremap::{Config, INVALID_LAYER_IDX, KeyAction, ReadableConfig, VirtualKeyboard};
+use anyhow::Result;
+use kbremap::{INVALID_LAYER_IDX, KeyAction, LayerIdx, Layout, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::{MF_CHECKED, MF_DISABLED};
 
 use crate::winapi::keyboard::{self, KeyEvent, KeyType};
 use crate::winapi::{AutoStartEntry, StaticIcon, TrayIcon, TrayIconEvent};
 
-fn config_path(config_file: &OsStr) -> Result<PathBuf> {
-    let mut path_buf;
-    let mut config_file = Path::new(config_file);
+#[cfg(feature = "runtime-config")]
+fn load_config() -> Result<(LayerIdx, impl Layout)> {
+    use anyhow::Context;
+    use kbremap::Config;
+    use std::{fs, path::PathBuf};
+
+    let config_file = env::args_os()
+        .nth(1)
+        .unwrap_or_else(|| "config.toml".into());
+
+    let mut config_file = PathBuf::from(config_file);
 
     // Could not find the configuration file in current working directory.
     // Check if a config file with same name exists next to our executable.
     if !config_file.exists() && config_file.is_relative() {
-        path_buf = env::current_exe()?;
-        path_buf.pop();
-        path_buf.push(config_file);
-        config_file = path_buf.as_path();
+        let mut new_config = env::current_exe()?;
+        new_config.pop();
+        new_config.push(config_file);
+        config_file = new_config;
     }
 
     config_file.canonicalize().context(format!(
         "Cannot load configuration {}",
         config_file.display()
-    ))
+    ))?;
+
+    let config_str = fs::read_to_string(config_file)?;
+    let config: kbremap::ReadableConfig = toml::from_str(&config_str)?;
+    let config = Config::try_from(config)?;
+    Ok((config.caps_lock_layer_idx, config.layout))
 }
 
-fn load_config() -> Result<Config> {
-    let config_file = env::args_os()
-        .nth(1)
-        .unwrap_or_else(|| "config.toml".into());
-    let config_file = config_path(&config_file)?;
-    let config_str = fs::read_to_string(config_file)?;
-    let config: ReadableConfig = toml::from_str(&config_str)?;
-    Ok(Config::try_from(config)?)
+#[cfg(not(feature = "runtime-config"))]
+fn load_config() -> Result<(LayerIdx, impl Layout)> {
+    let config_bin = include_bytes!(concat!(env!("OUT_DIR"), "/config.bin"));
+    let config = unsafe {
+        use kbremap::ArchivedConfig;
+        rkyv::access_unchecked::<ArchivedConfig>(config_bin)
+    };
+    Ok((config.caps_lock_layer_idx, &config.layout))
 }
 
 struct App {
@@ -97,8 +108,8 @@ impl App {
     }
 }
 
-async fn remap_keys(config: Config) {
-    let mut kb = VirtualKeyboard::new(config.layout);
+async fn remap_keys(capslock_layer_idx: LayerIdx, layout: impl Layout) {
+    let mut kb = VirtualKeyboard::new(layout);
     loop {
         let mut key_event = keyboard::next_key_event().await;
 
@@ -110,9 +121,8 @@ async fn remap_keys(config: Config) {
 
         // Special caps lock handling:
         // Make sure the caps lock state stays in sync with the configured layer.
-        if config.caps_lock_layer_idx != INVALID_LAYER_IDX
-            && (kb.locked_layer_idx() == config.caps_lock_layer_idx)
-                != keyboard::caps_lock_enabled()
+        if capslock_layer_idx != INVALID_LAYER_IDX
+            && (kb.locked_layer_idx() == capslock_layer_idx) != keyboard::caps_lock_enabled()
         {
             keyboard::send_key(KeyEvent {
                 up: false,
@@ -190,8 +200,10 @@ fn main() -> Result<()> {
         }
     });
 
+    let (caps_lock_layer_idx, layout) = load_config()?;
+
     // The executor runs the windows message loop internally.
-    winmsg_executor::block_on(remap_keys(load_config()?));
+    winmsg_executor::block_on(remap_keys(caps_lock_layer_idx, layout));
 
     Ok(())
 }

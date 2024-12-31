@@ -39,6 +39,7 @@ enum MappingTarget {
     },
 }
 
+#[derive(rkyv::Archive, rkyv::Serialize)]
 pub struct Config {
     pub caps_lock_layer_idx: LayerIdx,
     pub layout: LayoutStorage,

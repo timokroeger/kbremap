@@ -1,6 +1,15 @@
 #[path = "src/resources.rs"]
 mod resources;
 
+#[cfg(not(feature = "runtime-config"))]
+#[path = "src/config.rs"]
+mod config;
+
+#[cfg(not(feature = "runtime-config"))]
+#[path = "src/layout.rs"]
+#[allow(dead_code)]
+mod layout;
+
 use std::env;
 
 use resources::*;
@@ -39,12 +48,12 @@ const RC: &str = r#"
 1 24 {"?MANIFEST?"}
 "#;
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     // Update manifest with package name and version from Cargo.toml.
-    let name = env::var("CARGO_PKG_NAME").unwrap();
-    let major = env::var("CARGO_PKG_VERSION_MAJOR").unwrap();
-    let minor = env::var("CARGO_PKG_VERSION_MINOR").unwrap();
-    let patch = env::var("CARGO_PKG_VERSION_PATCH").unwrap();
+    let name = env::var("CARGO_PKG_NAME")?;
+    let major = env::var("CARGO_PKG_VERSION_MAJOR")?;
+    let minor = env::var("CARGO_PKG_VERSION_MINOR")?;
+    let patch = env::var("CARGO_PKG_VERSION_PATCH")?;
     let version = [&major, &minor, &patch, "0"].join(".");
 
     let manifest = MANIFEST.to_string();
@@ -64,13 +73,32 @@ fn main() {
     let rc = rc.replace("?ICON_KEYBOARD?", &ICON_KEYBOARD.to_string());
     let rc = rc.replace("?ICON_KEYBOARD_DELETE?", &ICON_KEYBOARD_DELETE.to_string());
 
-    let out_dir = env::var("OUT_DIR").unwrap();
+    let out_dir = env::var("OUT_DIR")?;
 
     let rc_file = format!("{out_dir}/resource.rc");
-    std::fs::write(&rc_file, rc).unwrap();
+    std::fs::write(&rc_file, rc)?;
 
     WindowsResource::new()
         .set_resource_file(&rc_file)
-        .compile()
-        .unwrap();
+        .compile()?;
+
+    #[cfg(not(feature = "runtime-config"))]
+    {
+        use config::{Config, ReadableConfig};
+        use std::{
+            fs::{self, File},
+            io::Write,
+            path::PathBuf,
+        };
+
+        let config_str = fs::read_to_string("config.toml")?;
+        let config_toml = toml::from_str::<ReadableConfig>(&config_str)?;
+        let config = Config::try_from(config_toml)?;
+        let config_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&config)?;
+
+        let out_dir = &PathBuf::from(env::var("OUT_DIR")?);
+        File::create(out_dir.join("config.bin"))?.write_all(&config_bytes)?;
+    }
+
+    Ok(())
 }

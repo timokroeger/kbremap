@@ -7,12 +7,17 @@ edition = "2024"
 license = "MIT/Apache-2.0"
 repository = "https://github.com/timokroeger/kbremap"
 
+[features]
+#default = ["runtime-config"]
+runtime-config = ["dep:toml"]
+
 [dependencies]
 anyhow = "1.0"
 encode_unicode = "1.0"
+rkyv = { version = "0.8.12", default-features = false, features = ["std", "unaligned"] }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
-toml = "0.9.7"
+toml = { version = "0.9.8", optional = true, default-features = false, features = ["parse", "serde"] }
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
@@ -30,6 +35,11 @@ windows-sys = { version = "0.61.2", features = [
 winmsg-executor = "0.3.1"
 
 [build-dependencies]
+anyhow = "1.0"
+rkyv = { version = "0.8.12", default-features = false, features = ["std", "unaligned"] }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"
+toml = { version = "0.9.8", default-features = false, features = ["parse", "serde"] }
 winresource = { version = "0.1.28", default-features = false }
 
 # For even smaller binaries, use the nightly toolchain which supports building

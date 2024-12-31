@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
+use rkyv::{Archive, Deserialize, Serialize, rancor::Failure};
+
 /// Action associated with the key. Returned by the user provided hook callback.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, Deserialize, Serialize)]
 pub enum KeyAction {
     /// Do not forward or send a key action.
     Ignore,
@@ -23,6 +25,7 @@ pub trait Layout {
     fn layer_lock(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx>;
 }
 
+#[derive(Archive, Serialize)]
 pub struct LayoutStorage {
     /// Key action for all keys including modifiers and locks.
     keymap: HashMap<(LayerIdx, ScanCode), KeyAction>,
@@ -87,5 +90,28 @@ impl Layout for LayoutStorage {
 
     fn layer_lock(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx> {
         self.locks.get(&(layer, scan_code)).copied()
+    }
+}
+
+impl Layout for &'static ArchivedLayoutStorage {
+    fn action(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<KeyAction> {
+        self.keymap
+            .get_with(&(layer, scan_code), |a, b| a.0 == b.0 && a.1 == b.1)
+            .map(rkyv::deserialize::<_, Failure>)
+            .map(Result::unwrap)
+    }
+
+    fn layer_modifier(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx> {
+        self.modifiers
+            .get_with(&(layer, scan_code), |a, b| a.0 == b.0 && a.1 == b.1)
+            .map(rkyv::deserialize::<_, Failure>)
+            .map(Result::unwrap)
+    }
+
+    fn layer_lock(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx> {
+        self.locks
+            .get_with(&(layer, scan_code), |a, b| a.0 == b.0 && a.1 == b.1)
+            .map(rkyv::deserialize::<_, Failure>)
+            .map(Result::unwrap)
     }
 }
