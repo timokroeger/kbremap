@@ -20,7 +20,7 @@ caps_lock_layer = "shift"
 # *target* (e.g. characters, modifiers keys, ...).
 #
 # Scan codes are used as source to specify the behaviour of a physical key on the keyboard.
-# Reference: <https://upload.wikimedia.org/wikipedia/commons/3/34/Ps2_de_keyboard_scancode_set_1.svg>
+# Reference: <https://kbdlayout.info/kbdgr/scancodes>
 #
 # Scan codes without explicit mapping will use the default Windows layout to translate
 # a key press to a [virtual key code](https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes).
