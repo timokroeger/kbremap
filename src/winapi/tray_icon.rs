@@ -126,42 +126,37 @@ impl TrayIcon {
 }
 
 fn handle_tray_icon_event(handlers: &RefCell<Handlers>, msg: WindowMessage) {
-    let handle_event = |e| {
-        if let Some(ref mut event_handler) = handlers.borrow_mut().event {
-            event_handler(e);
-        }
-    };
-
+    // Event is in the lower half, icon ID in the upper half.
+    // Our icon ID is 0 anyway but mask it away in case it changes in future.
     let event_msg = (msg.lparam & 0xFFFF) as u32;
-    match msg.lparam as u32 {
-        WM_LBUTTONUP => handle_event(TrayIconEvent::Click),
-        WM_LBUTTONDBLCLK => handle_event(TrayIconEvent::DoubleClick),
-        _ => {}
+    let tray_icon_event = match event_msg {
+        WM_LBUTTONUP => TrayIconEvent::Click,
+        WM_LBUTTONDBLCLK => TrayIconEvent::DoubleClick,
+        WM_CONTEXTMENU => {
+            // Show context menu if registered.
+            let mut handlers = handlers.borrow_mut();
+            let Some(context_menu_handler) = handlers.contex_menu.as_mut() else {
+                return;
+            };
+
+            let mut menu = Menu::new();
+            context_menu_handler(&mut menu);
+
+            let Some(id) = menu.show(
+                msg.hwnd,
+                (msg.wparam & 0xFFFF) as _,
+                ((msg.wparam >> 16) & 0xFFFF) as _,
+            ) else {
+                return;
+            };
+
+            TrayIconEvent::MenuItem(id)
+        }
+        _ => return,
     };
 
-    // Show context menu if registered.
-    if event_msg == WM_CONTEXTMENU {
-        let Some(mut menu) = handlers
-            .borrow_mut()
-            .contex_menu
-            .as_mut()
-            .map(|context_menu| {
-                let mut menu = Menu::new();
-                context_menu(&mut menu);
-                menu
-            })
-        else {
-            // Must use let-else-return here to avoid double-borrow.
-            return;
-        };
-
-        if let Some(id) = menu.show(
-            msg.hwnd,
-            (msg.wparam & 0xFFFF) as _,
-            ((msg.wparam >> 16) & 0xFFFF) as _,
-        ) {
-            handle_event(TrayIconEvent::MenuItem(id));
-        }
+    if let Some(ref mut event_handler) = handlers.borrow_mut().event {
+        event_handler(tray_icon_event);
     }
 }
 
