@@ -6,7 +6,8 @@ use std::env;
 use resources::*;
 use winresource::WindowsResource;
 
-const MANIFEST: &str = r#"<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+const MANIFEST: &str = r#"
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
     <assemblyIdentity type="win32" name="?NAME?" version="?VERSION?" />
     <trustInfo xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
         <security>
@@ -23,18 +24,28 @@ const MANIFEST: &str = r#"<assembly xmlns="urn:schemas-microsoft-com:asm.v1" man
             <heapType xmlns="http://schemas.microsoft.com/SMI/2020/WindowsSettings">SegmentHeap</heapType>
         </windowsSettings>
     </application>
-</assembly>"#;
+</assembly>
+"#;
+
+const RC: &str = r#"
+1 VERSIONINFO
+    FILEVERSION ?MAJOR?, ?MINOR?, ?PATCH?, 0
+    PRODUCTVERSION ?MAJOR?, ?MINOR?, ?PATCH?, 0
+    FILEOS 0x40004
+    FILETYPE 0x1
+    {}
+?ICON_KEYBOARD? ICON "icons/keyboard.ico"
+?ICON_KEYBOARD_DELETE? ICON "icons/keyboard_delete.ico"
+1 24 {"?MANIFEST?"}
+"#;
 
 fn main() {
     // Update manifest with package name and version from Cargo.toml.
     let name = env::var("CARGO_PKG_NAME").unwrap();
-    let version = [
-        env::var("CARGO_PKG_VERSION_MAJOR").unwrap(),
-        env::var("CARGO_PKG_VERSION_MINOR").unwrap(),
-        env::var("CARGO_PKG_VERSION_PATCH").unwrap(),
-        "0".to_string(),
-    ]
-    .join(".");
+    let major = env::var("CARGO_PKG_VERSION_MAJOR").unwrap();
+    let minor = env::var("CARGO_PKG_VERSION_MINOR").unwrap();
+    let patch = env::var("CARGO_PKG_VERSION_PATCH").unwrap();
+    let version = [&major, &minor, &patch, "0"].join(".");
 
     let manifest = MANIFEST.to_string();
     let manifest = manifest.replace("?NAME?", &name);
@@ -45,13 +56,21 @@ fn main() {
     let manifest = manifest.replace('\n', "");
     let manifest = manifest.replace("    ", "");
 
+    let rc = RC.to_string();
+    let rc = rc.replace("?MAJOR?", &major);
+    let rc = rc.replace("?MINOR?", &minor);
+    let rc = rc.replace("?PATCH?", &patch);
+    let rc = rc.replace("?MANIFEST?", &manifest.replace("\"", "\"\""));
+    let rc = rc.replace("?ICON_KEYBOARD?", &ICON_KEYBOARD.to_string());
+    let rc = rc.replace("?ICON_KEYBOARD_DELETE?", &ICON_KEYBOARD_DELETE.to_string());
+
+    let out_dir = env::var("OUT_DIR").unwrap();
+
+    let rc_file = format!("{}/resource.rc", out_dir);
+    std::fs::write(&rc_file, rc).unwrap();
+
     WindowsResource::new()
-        .set_manifest(&manifest)
-        .set_icon_with_id("icons/keyboard.ico", &format!("{}", ICON_KEYBOARD)) // icon for the .exe file
-        .set_icon_with_id(
-            "icons/keyboard_delete.ico",
-            &format!("{}", ICON_KEYBOARD_DELETE),
-        )
+        .set_resource_file(&rc_file)
         .compile()
         .unwrap();
 }
