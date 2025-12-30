@@ -6,7 +6,6 @@ mod winapi;
 
 use std::cell::Cell;
 use std::ffi::OsStr;
-use std::future::pending;
 use std::path::{Path, PathBuf};
 use std::{env, fs, process};
 
@@ -15,6 +14,7 @@ use kbremap::{Config, KeyAction, ReadableConfig, VirtualKeyboard};
 use winapi::TrayIconEvent;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
+use winmsg_executor::{FilterResult, MessageLoop};
 
 use crate::winapi::{AutoStartEntry, KeyEvent, KeyType, StaticIcon, TrayIcon};
 
@@ -195,7 +195,7 @@ fn main() -> Result<()> {
     });
 
     // Event loop required for the low-level keyboard hook and the tray icon.
-    winmsg_executor::block_on(pending::<()>());
+    MessageLoop::run(|_this, _msg| FilterResult::Forward);
 
     Ok(())
 }
