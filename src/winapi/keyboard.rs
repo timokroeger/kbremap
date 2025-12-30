@@ -1,6 +1,7 @@
 //! Safe abstraction over the low-level windows keyboard hook API.
 
 use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 use std::fmt::Display;
 use std::future::poll_fn;
 use std::task::{Poll, Waker};
@@ -162,20 +163,20 @@ where
 }
 
 struct KeyQueue {
-    key_events: Vec<KeyEvent>,
+    key_events: VecDeque<KeyEvent>,
     waker: Option<Waker>,
 }
 
 impl KeyQueue {
     const fn new() -> Self {
         Self {
-            key_events: Vec::new(),
+            key_events: VecDeque::new(),
             waker: None,
         }
     }
 
     fn enqueue(&mut self, key: KeyEvent) {
-        self.key_events.push(key);
+        self.key_events.push_back(key);
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }
@@ -196,17 +197,23 @@ pub fn send_key(key: KeyEvent) {
 
 async fn send_key_task() {
     poll_fn(|cx| {
-        KEY_QUEUE.with_borrow_mut(|queue| {
-            for key in queue.key_events.drain(..) {
+        while let Some(key) = KEY_QUEUE.with_borrow_mut(|queue| queue.key_events.pop_front()) {
+            // The internally used `SendInput()` function may re-enter the
+            // keyboard hook. It does so by calling it with an injected version
+            // of the key event we sent. But also for other pending real key
+            // events. To be able to enqueue more key events from within the
+            // hook (e.g. as reaction to a real key press), we must not hold a
+            // mutable borrow on the key queue when calling `send_input()`.
                 send_input(key);
             }
 
+        KEY_QUEUE.with_borrow_mut(|queue| {
             // We are the only task waiting for key events.
             debug_assert!(queue.waker.is_none());
             queue.waker = Some(cx.waker().clone());
+        });
             Poll::Pending::<()>
         })
-    })
     .await;
 }
 
