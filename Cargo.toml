@@ -32,11 +32,12 @@ winmsg-executor = "0.3.1"
 [build-dependencies]
 winresource = { version = "0.1.28", default-features = false }
 
-# Size optimized build:
-# `cargo +nightly build --release -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target x86_64-pc-windows-msvc`
-[profile.release]
+# For even smaller binaries, use the nightly toolchain which supports building
+# the standard library with panic_abort and optimizations for size as configered
+# in `.cargo/config.toml`.
+[profile.minsize-release]
+inherits = "release"
 lto = true
 opt-level = "z"
 codegen-units = 1
 panic = "abort"
-strip = true

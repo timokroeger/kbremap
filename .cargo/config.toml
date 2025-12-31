@@ -1,2 +1,13 @@
-[build]
-rustflags = ["-C", "target-feature=+crt-static"]
+# Uncomment to create binaries with maximum compatibility.
+# [build]
+# rustflags = ["-C", "target-feature=+crt-static"]
+
+[unstable]
+build-std = ["std", "panic_abort"]
+build-std-features = ["optimize_for_size"]
+panic-immediate-abort = true
+profile-rustflags = true
+
+# Uncomment when using nightly toolchain for even smaller binaries.
+# [profile.minsize-release]
+# rustflags = [ "-Zlocation-detail=none", "-Zfmt-debug=none" ]
