@@ -12,7 +12,7 @@ use std::{env, fs, process};
 use anyhow::{Context, Result};
 use kbremap::{Config, KeyAction, ReadableConfig, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
-use windows_sys::Win32::UI::WindowsAndMessaging::*;
+use windows_sys::Win32::UI::WindowsAndMessaging::{MF_CHECKED, MF_DISABLED};
 
 use crate::winapi::keyboard::{self, KeyEvent, KeyType};
 use crate::winapi::{AutoStartEntry, StaticIcon, TrayIcon, TrayIconEvent};
@@ -127,25 +127,25 @@ async fn remap_keys(config: Config) {
         }
 
         match remap {
-            None => println!("{} forwarded", key_event),
+            None => println!("{key_event} forwarded"),
             Some(KeyAction::Ignore) => {
-                println!("{} ignored", key_event);
+                println!("{key_event} ignored");
                 continue;
             }
             Some(KeyAction::Character(c)) => {
                 if let Some(virtual_key) = keyboard::get_virtual_key(c) {
-                    println!("{} remapped to `{}` as virtual key", key_event, c);
+                    println!("{key_event} remapped to `{c}` as virtual key");
                     key_event.key = KeyType::VirtualKey(virtual_key);
                 } else {
-                    println!("{} remapped to `{}` as unicode input", key_event, c);
+                    println!("{key_event} remapped to `{c}` as unicode input");
                     key_event.key = KeyType::Unicode(c);
                 }
             }
             Some(KeyAction::VirtualKey(virtual_key)) => {
-                println!("{} remapped to virtual key {:#04X}", key_event, virtual_key);
+                println!("{key_event} remapped to virtual key {virtual_key:#04X}");
                 key_event.key = KeyType::VirtualKey(virtual_key);
             }
-        };
+        }
 
         keyboard::send_key(key_event);
     }

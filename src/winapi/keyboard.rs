@@ -93,8 +93,8 @@ impl Display for KeyEvent {
         f.write_fmt(format_args!("{{ sc: {:#06X}, ", self.scan_code))?;
 
         match self.key {
-            KeyType::VirtualKey(vk) => f.write_fmt(format_args!("vk: {:#04X}", vk))?,
-            KeyType::Unicode(c) => f.write_fmt(format_args!("char: {}", c))?,
+            KeyType::VirtualKey(vk) => f.write_fmt(format_args!("vk: {vk:#04X}"))?,
+            KeyType::Unicode(c) => f.write_fmt(format_args!("char: {c}"))?,
         }
 
         f.write_fmt(format_args!(

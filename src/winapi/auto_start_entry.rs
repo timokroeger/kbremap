@@ -30,7 +30,7 @@ impl<'a> AutoStartEntry<'a> {
                 c"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"
                     .as_ptr()
                     .cast(),
-                &mut key,
+                &raw mut key,
             );
             Self { key, name }
         }
@@ -47,7 +47,7 @@ impl<'a> AutoStartEntry<'a> {
                 RRF_RT_REG_SZ,
                 ptr::null_mut(),
                 path_buf_reg.as_mut_ptr().cast(),
-                &mut path_len_reg,
+                &raw mut path_len_reg,
             )
         } == 0;
         if !key_exists {
@@ -94,7 +94,7 @@ impl<'a> AutoStartEntry<'a> {
 fn exe_path(path_buf: &mut [u8]) -> &[u8] {
     let mut buf_len = path_buf.len() as u32;
     let ok = unsafe {
-        QueryFullProcessImageNameA(GetCurrentProcess(), 0, path_buf.as_mut_ptr(), &mut buf_len)
+        QueryFullProcessImageNameA(GetCurrentProcess(), 0, path_buf.as_mut_ptr(), &raw mut buf_len)
     };
     if ok == 0 {
         return &[];

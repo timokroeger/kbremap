@@ -18,7 +18,7 @@ impl StaticIcon {
                 LR_DEFAULTSIZE | LR_SHARED,
             )
         };
-        assert!(!hicon.is_null(), "icon resource {} not found", id);
+        assert!(!hicon.is_null(), "icon resource {id} not found");
         Self(hicon)
     }
 

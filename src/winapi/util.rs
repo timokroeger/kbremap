@@ -33,7 +33,7 @@ pub fn console_close() {
 fn disable_quick_edit_mode() {
     unsafe {
         let console = CreateFileA(
-            c"CONIN$".as_ptr() as _,
+            c"CONIN$".as_ptr().cast(),
             GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             ptr::null(),
@@ -42,10 +42,10 @@ fn disable_quick_edit_mode() {
             ptr::null_mut(),
         );
         let mut mode: u32 = 0;
-        if GetConsoleMode(console as _, &mut mode) != 0 {
+        if GetConsoleMode(console.cast(), &raw mut mode) != 0 {
             mode &= !ENABLE_QUICK_EDIT_MODE;
             mode |= ENABLE_EXTENDED_FLAGS;
-            SetConsoleMode(console as _, mode);
+            SetConsoleMode(console.cast(), mode);
         }
         CloseHandle(console);
     }

@@ -60,13 +60,13 @@ fn main() {
     let rc = rc.replace("?MAJOR?", &major);
     let rc = rc.replace("?MINOR?", &minor);
     let rc = rc.replace("?PATCH?", &patch);
-    let rc = rc.replace("?MANIFEST?", &manifest.replace("\"", "\"\""));
+    let rc = rc.replace("?MANIFEST?", &manifest.replace('"', "\"\""));
     let rc = rc.replace("?ICON_KEYBOARD?", &ICON_KEYBOARD.to_string());
     let rc = rc.replace("?ICON_KEYBOARD_DELETE?", &ICON_KEYBOARD_DELETE.to_string());
 
     let out_dir = env::var("OUT_DIR").unwrap();
 
-    let rc_file = format!("{}/resource.rc", out_dir);
+    let rc_file = format!("{out_dir}/resource.rc");
     std::fs::write(&rc_file, rc).unwrap();
 
     WindowsResource::new()

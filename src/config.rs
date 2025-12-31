@@ -69,7 +69,7 @@ impl TryFrom<ReadableConfig> for Config {
 
         let mut layers = HashMap::with_capacity(config.layers.len());
 
-        for (name, mapping) in config.layers.into_iter() {
+        for (name, mapping) in config.layers {
             let layer_idx = layout.add_layer(name.clone());
             if name == config.base_layer {
                 layout.set_base_layer(layer_idx);
@@ -122,7 +122,7 @@ impl TryFrom<ReadableConfig> for Config {
                         layout.add_key(
                             mapping.scan_code,
                             *layer_idx,
-                            virtual_key.map_or_else(|| KeyAction::Ignore, KeyAction::VirtualKey),
+                            virtual_key.map_or(KeyAction::Ignore, KeyAction::VirtualKey),
                         );
                     }
                     _ => {

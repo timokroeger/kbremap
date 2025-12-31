@@ -78,7 +78,7 @@ pub struct TrayIcon {
 impl TrayIcon {
     pub fn new(icon: StaticIcon) -> Self {
         let msg_id_taskbar_created =
-            unsafe { RegisterWindowMessageA(c"TaskbarCreated".as_ptr() as *const u8) };
+            unsafe { RegisterWindowMessageA(c"TaskbarCreated".as_ptr().cast::<u8>()) };
         let window = Window::new(
             WindowType::MessageOnly,
             State {
@@ -90,7 +90,7 @@ impl TrayIcon {
             },
             move |state, msg| {
                 if msg.msg == MSG_ID_TRAY_ICON {
-                    handle_tray_icon_event(&state.handlers, msg);
+                    handle_tray_icon_event(&state.handlers, &msg);
                     return Some(0);
                 }
 
@@ -125,7 +125,7 @@ impl TrayIcon {
     }
 }
 
-fn handle_tray_icon_event(handlers: &RefCell<Handlers>, msg: WindowMessage) {
+fn handle_tray_icon_event(handlers: &RefCell<Handlers>, msg: &WindowMessage) {
     // Event is in the lower half, icon ID in the upper half.
     // Our icon ID is 0 anyway but mask it away in case it changes in future.
     let event_msg = (msg.lparam & 0xFFFF) as u32;
@@ -167,8 +167,8 @@ fn add_tray_icon(hwnd: HWND, icon: StaticIcon) {
     notification_data.hIcon = icon.handle();
     notification_data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
     unsafe {
-        Shell_NotifyIconA(NIM_ADD, &notification_data);
-        Shell_NotifyIconA(NIM_SETVERSION, &notification_data);
+        Shell_NotifyIconA(NIM_ADD, &raw const notification_data);
+        Shell_NotifyIconA(NIM_SETVERSION, &raw const notification_data);
     }
 }
 
@@ -176,7 +176,7 @@ fn update_tray_icon(hwnd: HWND, icon: StaticIcon) {
     let mut notification_data = notification_data(hwnd);
     notification_data.uFlags = NIF_ICON;
     notification_data.hIcon = icon.handle();
-    unsafe { Shell_NotifyIconA(NIM_MODIFY, &notification_data) };
+    unsafe { Shell_NotifyIconA(NIM_MODIFY, &raw const notification_data) };
 }
 
 fn notification_data(hwnd: HWND) -> NOTIFYICONDATAA {
