@@ -13,44 +13,50 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 thread_local! {
-    /// Stores a type-erased pointer to the hook closure.
-    static HOOK: Cell<*mut ()> = const { Cell::new(ptr::null_mut()) };
     /// Buffer key events to prevent blocking the low-level keyboard hook.
     static KEY_QUEUE: RefCell<KeyQueue> = const { RefCell::new(KeyQueue::new()) };
+    static HOOK_HANDLE: Cell<HHOOK> = const { Cell::new(ptr::null_mut()) };
 }
 
-/// Sets the low-level keyboard hook for this thread.
-///
-/// The closure receives key press and key release events. When the closure
-/// returns `false`, the key event is not modified and forwarded as if
-/// nothing happened. To ignore a key event or to remap it to another
-/// key, return `true` and use [`send_key()`].
-///
-/// A message loop must be running on the same thread for the hook to work.
-///
-/// # Panics
-///
-/// Panics when a hook is already registered from the same thread.
-pub fn register_keyboard_hook<F>(callback: F)
-where
-    F: FnMut(KeyEvent) -> bool + 'static,
-{
-    assert!(
-        HOOK.get().is_null(),
-        "Only one keyboard hook can be registered per thread."
-    );
+/// Installs the low-level keyboard hook for this thread.
+/// Warning: Captures all keyboard events system-wide, no other application will
+/// receive keyboard events until the hook is removed by calling `hook_disable()`.
+pub fn hook_enable() {
+    if HOOK_HANDLE.get().is_null() {
+        let handle =
+            unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc), ptr::null_mut(), 0) };
+        assert!(
+            !handle.is_null(),
+            "Failed to install low-level keyboard hook."
+        );
+        HOOK_HANDLE.set(handle);
+    }
+}
 
-    winmsg_executor::spawn_local(send_key_task());
+/// Removes the low-level keyboard hook for this thread.
+pub fn hook_disable() {
+    let handle = HOOK_HANDLE.get();
+    if !handle.is_null() {
+        unsafe {
+            UnhookWindowsHookEx(handle);
+        }
+        HOOK_HANDLE.set(ptr::null_mut());
+    }
+}
 
-    let callback = Box::into_raw(Box::new(callback));
-    HOOK.set(callback as *mut ());
-
-    let handle =
-        unsafe { SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_proc::<F>), ptr::null_mut(), 0) };
-    assert!(
-        !handle.is_null(),
-        "Failed to install low-level keyboard hook."
-    );
+/// Asynchronously waits for the next key event captured by the low-level keyboard hook.
+pub async fn next_key_event() -> KeyEvent {
+    poll_fn(|cx| {
+        KEY_QUEUE.with_borrow_mut(|queue| {
+            if let Some(key) = queue.key_events.pop_front() {
+                Poll::Ready(key)
+            } else {
+                queue.waker.push(cx.waker().clone());
+                Poll::Pending
+            }
+        })
+    })
+    .await
 }
 
 /// Key event type.
@@ -119,10 +125,7 @@ impl KeyEvent {
 /// The actual WinAPI compatible hook callback function.
 /// Called from `KiUserCallbackDispatcher()` context as described in
 /// (this blog post)[http://www.nynaeve.net/?p=204]. Might be re-entered.
-unsafe extern "system" fn hook_proc<F>(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT
-where
-    F: FnMut(KeyEvent) -> bool + 'static,
-{
+unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code != HC_ACTION as i32 {
         return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
     }
@@ -139,86 +142,44 @@ where
 
     // Windows re-enters the hook function for two conditions:
     // 1. `SendInput()` called from within the hook, which produces an injected
-    //    message. We pass on injected messages without looking at them anyway.
+    //    key. Additionally to the injected key, all other regular key events
+    //    are passed to the hook before `SendInput()` returns.
     // 2. The hook blocks longer than the number of ms specified in the registry
     //    key `HKEY_CURRENT_USER\Control Panel\LowLevelHooksTimeout`.
+    // Our solution to both scenarios is to buffer all key events and process
+    // them asynchronously outside of the hook context.
+    // This has the downside that we catch every key event and downstream
+    // keyboards hooks only ever see injected events. So far this did not cause
+    // any issues in practice.
 
-    // As the main use case for a low-level keyboard hook is to remap keys,
-    // we implement a non-blocking `send_key()` function (see below) which can
-    // safely be called from the hook.
-
-    // The TLS `HOOK` variable contains a null pointer while the user-provided
-    // closure is running. We can use that to detect if the hook was re-entered.
-    // Only call the closure when we are sure it is available.
-    let hook_ptr = HOOK.replace(ptr::null_mut()) as *mut F;
-    if let Some(hook) = unsafe { hook_ptr.as_mut() } {
-        let handled = hook(KeyEvent::from_hook_lparam(hook_lparam));
-        HOOK.set(hook_ptr as *mut ());
-        if handled {
-            return -1;
-        }
-    }
-
-    CallNextHookEx(ptr::null_mut(), code, wparam, lparam)
+    let key = KeyEvent::from_hook_lparam(hook_lparam);
+    KEY_QUEUE.with(|queue| queue.borrow_mut().enqueue(key));
+    -1
 }
 
 struct KeyQueue {
     key_events: VecDeque<KeyEvent>,
-    waker: Option<Waker>,
+    waker: Vec<Waker>,
 }
 
 impl KeyQueue {
     const fn new() -> Self {
         Self {
             key_events: VecDeque::new(),
-            waker: None,
+            waker: Vec::new(),
         }
     }
 
     fn enqueue(&mut self, key: KeyEvent) {
         self.key_events.push_back(key);
-        if let Some(waker) = self.waker.take() {
+        for waker in self.waker.drain(..) {
             waker.wake();
         }
     }
 }
 
 /// Sends a virtual key event.
-// TODO: Send keys directly when not called from within the keyboard hook.
 pub fn send_key(key: KeyEvent) {
-    // `SendInput()` may block if a slow/faulty low-level keyboard hook is
-    // registered. As a fix, buffer the key event and call `SendInput()` from
-    // an async task running on our threads message loop (which only can run
-    // after we have returned from the hook procedure).
-    // That way our hook is unaffected by other faulty hooks and Windows can
-    // correctly remove the offending hooks from the hook chain.
-    KEY_QUEUE.with(|queue| queue.borrow_mut().enqueue(key));
-}
-
-async fn send_key_task() {
-    poll_fn(|cx| {
-        while let Some(key) = KEY_QUEUE.with_borrow_mut(|queue| queue.key_events.pop_front()) {
-            // The internally used `SendInput()` function may re-enter the
-            // keyboard hook. It does so by calling it with an injected version
-            // of the key event we sent. But also for other pending real key
-            // events. To be able to enqueue more key events from within the
-            // hook (e.g. as reaction to a real key press), we must not hold a
-            // mutable borrow on the key queue when calling `send_input()`.
-                send_input(key);
-            }
-
-        KEY_QUEUE.with_borrow_mut(|queue| {
-            // We are the only task waiting for key events.
-            debug_assert!(queue.waker.is_none());
-            queue.waker = Some(cx.waker().clone());
-        });
-            Poll::Pending::<()>
-        })
-    .await;
-}
-
-// Delayed handler called by the async task to actually send the key event.
-fn send_input(key: KeyEvent) {
     unsafe {
         let mut inputs: [INPUT; 2] = mem::zeroed();
 

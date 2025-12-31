@@ -11,12 +11,11 @@ use std::{env, fs, process};
 
 use anyhow::{Context, Result};
 use kbremap::{Config, KeyAction, ReadableConfig, VirtualKeyboard};
-use winapi::TrayIconEvent;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
-use winmsg_executor::{FilterResult, MessageLoop};
 
-use crate::winapi::{AutoStartEntry, KeyEvent, KeyType, StaticIcon, TrayIcon};
+use crate::winapi::keyboard::{self, KeyEvent, KeyType};
+use crate::winapi::{AutoStartEntry, StaticIcon, TrayIcon, TrayIconEvent};
 
 fn config_path(config_file: &OsStr) -> Result<PathBuf> {
     let mut path_buf;
@@ -56,6 +55,7 @@ struct App {
 
 impl App {
     fn new() -> Self {
+        keyboard::hook_enable();
         Self {
             // Display debug and panic output when launched from a terminal.
             // Not only checks if we are running from a terminal but also attaches to it.
@@ -87,25 +87,20 @@ impl App {
             self.tray_icon
                 .set_icon(StaticIcon::from_rc_numeric(resources::ICON_KEYBOARD_DELETE));
             self.enabled.set(false);
+            keyboard::hook_disable();
         } else {
             self.tray_icon
                 .set_icon(StaticIcon::from_rc_numeric(resources::ICON_KEYBOARD));
             self.enabled.set(true);
+            keyboard::hook_enable();
         }
     }
 }
 
-fn main() -> Result<()> {
-    let app: &App = Box::leak(Box::new(App::new()));
-
-    let config = load_config()?;
+async fn remap_keys(config: Config) {
     let mut kb = VirtualKeyboard::new(config.layout);
-    winapi::register_keyboard_hook(move |mut key_event| {
-        if !app.enabled.get() {
-            kb.reset();
-            println!("{} forwarded because remapping is disabled", key_event);
-            return false;
-        }
+    loop {
+        let mut key_event = keyboard::next_key_event().await;
 
         let remap = if key_event.up {
             kb.release_key(key_event.scan_code)
@@ -116,13 +111,13 @@ fn main() -> Result<()> {
         // Special caps lock handling:
         // Make sure the caps lock state stays in sync with the configured layer.
         if let Some(caps_lock_layer) = &config.caps_lock_layer {
-            if (kb.locked_layer() == caps_lock_layer) != winapi::caps_lock_enabled() {
-                winapi::send_key(KeyEvent {
+            if (kb.locked_layer() == caps_lock_layer) != keyboard::caps_lock_enabled() {
+                keyboard::send_key(KeyEvent {
                     up: false,
                     key: KeyType::VirtualKey(VK_CAPITAL as _),
                     ..key_event
                 });
-                winapi::send_key(KeyEvent {
+                keyboard::send_key(KeyEvent {
                     up: true,
                     key: KeyType::VirtualKey(VK_CAPITAL as _),
                     ..key_event
@@ -131,42 +126,33 @@ fn main() -> Result<()> {
             }
         }
 
-        let Some(remap) = remap else {
-            println!("{} forwarded", key_event);
-            return false;
-        };
-
-        let mapped_key = match remap {
-            KeyAction::Ignore => {
+        match remap {
+            None => println!("{} forwarded", key_event),
+            Some(KeyAction::Ignore) => {
                 println!("{} ignored", key_event);
-                return true;
+                continue;
             }
-            KeyAction::Character(c) => {
-                if let Some(virtual_key) = winapi::get_virtual_key(c) {
-                    print!("{} remapped to `{}` as virtual key", key_event, c);
-                    KeyType::VirtualKey(virtual_key)
+            Some(KeyAction::Character(c)) => {
+                if let Some(virtual_key) = keyboard::get_virtual_key(c) {
+                    println!("{} remapped to `{}` as virtual key", key_event, c);
+                    key_event.key = KeyType::VirtualKey(virtual_key);
                 } else {
-                    print!("{} remapped to `{}` as unicode input", key_event, c);
-                    KeyType::Unicode(c)
+                    println!("{} remapped to `{}` as unicode input", key_event, c);
+                    key_event.key = KeyType::Unicode(c);
                 }
             }
-            KeyAction::VirtualKey(virtual_key) => {
-                print!("{} remapped to virtual key {:#04X}", key_event, virtual_key);
-                KeyType::VirtualKey(virtual_key)
+            Some(KeyAction::VirtualKey(virtual_key)) => {
+                println!("{} remapped to virtual key {:#04X}", key_event, virtual_key);
+                key_event.key = KeyType::VirtualKey(virtual_key);
             }
         };
 
-        if matches!((mapped_key, key_event.key), (KeyType::VirtualKey(vk), KeyType::VirtualKey(prev_vk)) if vk == prev_vk)
-        {
-            println!(", forwarded");
-            return false;
-        }
+        keyboard::send_key(key_event);
+    }
+}
 
-        println!(", enqueued");
-        key_event.key = mapped_key;
-        winapi::send_key(key_event);
-        true
-    });
+fn main() -> Result<()> {
+    let app = Box::leak(Box::new(App::new()));
 
     const MENU_STARTUP: u32 = 1;
     const MENU_DEBUG: u32 = 2;
@@ -203,8 +189,8 @@ fn main() -> Result<()> {
         }
     });
 
-    // Event loop required for the low-level keyboard hook and the tray icon.
-    MessageLoop::run(|_this, _msg| FilterResult::Forward);
+    // The executor runs the windows message loop internally.
+    winmsg_executor::block_on(remap_keys(load_config()?));
 
     Ok(())
 }
