@@ -136,26 +136,35 @@ fn main() -> Result<()> {
             return false;
         };
 
-        match remap {
+        let mapped_key = match remap {
             KeyAction::Ignore => {
                 println!("{} ignored", key_event);
+                return true;
             }
             KeyAction::Character(c) => {
                 if let Some(virtual_key) = winapi::get_virtual_key(c) {
-                    println!("{} remapped to `{}` as virtual key", key_event, c);
-                    key_event.key = KeyType::VirtualKey(virtual_key);
+                    print!("{} remapped to `{}` as virtual key", key_event, c);
+                    KeyType::VirtualKey(virtual_key)
                 } else {
-                    println!("{} remapped to `{}` as unicode input", key_event, c);
-                    key_event.key = KeyType::Unicode(c);
+                    print!("{} remapped to `{}` as unicode input", key_event, c);
+                    KeyType::Unicode(c)
                 }
-                winapi::send_key(key_event);
             }
             KeyAction::VirtualKey(virtual_key) => {
-                println!("{} remapped to virtual key {:#04X}", key_event, virtual_key);
-                key_event.key = KeyType::VirtualKey(virtual_key);
-                winapi::send_key(key_event);
+                print!("{} remapped to virtual key {:#04X}", key_event, virtual_key);
+                KeyType::VirtualKey(virtual_key)
             }
+        };
+
+        if matches!((mapped_key, key_event.key), (KeyType::VirtualKey(vk), KeyType::VirtualKey(prev_vk)) if vk == prev_vk)
+        {
+            println!(", forwarded");
+            return false;
         }
+
+        println!(", enqueued");
+        key_event.key = mapped_key;
+        winapi::send_key(key_event);
         true
     });
 

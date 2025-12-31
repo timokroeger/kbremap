@@ -292,7 +292,7 @@ pub fn get_virtual_key(c: char) -> Option<u8> {
         }
 
         // Check if the modifier keys, which are required to type the character, are pressed.
-        let modifier_pressed = |vk: u16| (GetKeyState(vk.into()) as u16) & 0x8000 != 0;
+        let modifier_pressed = |vk: u16| (GetAsyncKeyState(vk.into()) as u16) & 0x8000 != 0;
 
         let shift = vk_state & 0x100 != 0;
         if shift && (modifier_pressed(VK_SHIFT) == caps_lock_enabled()) {
