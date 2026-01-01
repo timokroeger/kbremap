@@ -110,20 +110,20 @@ async fn remap_keys(config: Config) {
 
         // Special caps lock handling:
         // Make sure the caps lock state stays in sync with the configured layer.
-        if let Some(caps_lock_layer) = &config.caps_lock_layer {
-            if (kb.locked_layer() == caps_lock_layer) != keyboard::caps_lock_enabled() {
-                keyboard::send_key(KeyEvent {
-                    up: false,
-                    key: KeyType::VirtualKey(VK_CAPITAL as _),
-                    ..key_event
-                });
-                keyboard::send_key(KeyEvent {
-                    up: true,
-                    key: KeyType::VirtualKey(VK_CAPITAL as _),
-                    ..key_event
-                });
-                println!("caps lock toggled");
-            }
+        if let Some(caps_lock_layer) = &config.caps_lock_layer
+            && (kb.locked_layer() == caps_lock_layer) != keyboard::caps_lock_enabled()
+        {
+            keyboard::send_key(KeyEvent {
+                up: false,
+                key: KeyType::VirtualKey(VK_CAPITAL as _),
+                ..key_event
+            });
+            keyboard::send_key(KeyEvent {
+                up: true,
+                key: KeyType::VirtualKey(VK_CAPITAL as _),
+                ..key_event
+            });
+            println!("caps lock toggled");
         }
 
         match remap {

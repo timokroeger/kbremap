@@ -45,11 +45,7 @@ impl Menu {
                 hwnd,
                 ptr::null(),
             );
-            if id == 0 {
-                None
-            } else {
-                Some(id as u32)
-            }
+            if id == 0 { None } else { Some(id as u32) }
         }
     }
 }

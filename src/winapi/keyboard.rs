@@ -127,17 +127,17 @@ impl KeyEvent {
 /// (this blog post)[http://www.nynaeve.net/?p=204]. Might be re-entered.
 unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code != HC_ACTION as i32 {
-        return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
+        return unsafe { CallNextHookEx(ptr::null_mut(), code, wparam, lparam) };
     }
 
-    let hook_lparam = &*(lparam as *const KBDLLHOOKSTRUCT);
+    let hook_lparam = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
     let injected = hook_lparam.flags & LLKHF_INJECTED != 0;
 
     // `SendInput()` internally triggers the hook function. Filter out injected
     // events to prevent an infinite loop if our remapping logic has sent the
     // injected event.
     if injected {
-        return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
+        return unsafe { CallNextHookEx(ptr::null_mut(), code, wparam, lparam) };
     }
 
     // Windows re-enters the hook function for two conditions:

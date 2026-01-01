@@ -61,10 +61,10 @@ impl TryFrom<ReadableConfig> for Config {
             return Err(ConfigError::InvalidBaseLayer);
         }
 
-        if let Some(caps_lock_layer) = &config.caps_lock_layer {
-            if !config.layers.contains_key(caps_lock_layer) {
-                return Err(ConfigError::InvalidCapsLockLayer);
-            }
+        if let Some(caps_lock_layer) = &config.caps_lock_layer
+            && !config.layers.contains_key(caps_lock_layer)
+        {
+            return Err(ConfigError::InvalidCapsLockLayer);
         }
 
         let mut layers = HashMap::with_capacity(config.layers.len());

@@ -94,7 +94,12 @@ impl<'a> AutoStartEntry<'a> {
 fn exe_path(path_buf: &mut [u8]) -> &[u8] {
     let mut buf_len = path_buf.len() as u32;
     let ok = unsafe {
-        QueryFullProcessImageNameA(GetCurrentProcess(), 0, path_buf.as_mut_ptr(), &raw mut buf_len)
+        QueryFullProcessImageNameA(
+            GetCurrentProcess(),
+            0,
+            path_buf.as_mut_ptr(),
+            &raw mut buf_len,
+        )
     };
     if ok == 0 {
         return &[];
