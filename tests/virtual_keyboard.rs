@@ -1,9 +1,8 @@
-use kbremap::KeyAction::*;
-use kbremap::{Layout, VirtualKeyboard};
+use kbremap::{KeyAction::*, LayoutBuilder, VirtualKeyboard};
 
 #[test]
 fn layer_activation() {
-    let mut layout = Layout::new();
+    let mut layout = LayoutBuilder::new();
     let base = layout.add_layer();
     let a = layout.add_layer();
     let b = layout.add_layer();
@@ -18,6 +17,8 @@ fn layer_activation() {
     layout.add_key(0x20, a, Character('1'));
     layout.add_key(0x20, b, Character('2'));
     layout.add_key(0x20, c, Character('3'));
+
+    let layout = layout.build();
 
     let mut kb = VirtualKeyboard::new(layout);
 
@@ -80,13 +81,15 @@ fn layer_activation() {
 
 #[test]
 fn accidental_shift_lock_issue25() {
-    let mut layout = Layout::new();
+    let mut layout = LayoutBuilder::new();
     let base = layout.add_layer();
     let shift = layout.add_layer();
     layout.add_modifier(0x2A, base, shift);
     layout.add_key(0x2A, base, VirtualKey(0xA0));
     layout.add_modifier(0xE036, base, shift);
     layout.add_key(0xE036, base, VirtualKey(0xA1));
+
+    let layout = layout.build();
 
     let mut kb = VirtualKeyboard::new(layout);
 
@@ -98,7 +101,7 @@ fn accidental_shift_lock_issue25() {
 
 #[test]
 fn masked_modifier_on_base_layer() {
-    let mut layout = Layout::new();
+    let mut layout = LayoutBuilder::new();
     let base = layout.add_layer();
     let a = layout.add_layer();
     let b = layout.add_layer();
@@ -111,6 +114,8 @@ fn masked_modifier_on_base_layer() {
     layout.add_key(0x0C, a, Ignore);
     layout.add_key(0xBB, b, Character('B'));
     layout.add_key(0xCC, c, Character('C')); // not reachable from base
+
+    let layout = layout.build();
 
     let mut kb = VirtualKeyboard::new(layout);
 
@@ -143,7 +148,7 @@ fn masked_modifier_on_base_layer() {
 
 #[test]
 fn layer_lock() {
-    let mut layout = Layout::new();
+    let mut layout = LayoutBuilder::new();
     let base = layout.add_layer();
     let a = layout.add_layer();
     let b = layout.add_layer();
@@ -187,6 +192,8 @@ fn layer_lock() {
     layout.add_layer_lock(0xB0, c, c);
 
     layout.add_key(0xFF, c, Character('C'));
+
+    let layout = layout.build();
 
     let mut kb = VirtualKeyboard::new(layout);
 
@@ -237,7 +244,7 @@ fn layer_lock() {
 
 #[test]
 fn transparency() {
-    let mut layout = Layout::new();
+    let mut layout = LayoutBuilder::new();
     let a = layout.add_layer();
     let b = layout.add_layer();
     let c = layout.add_layer();
@@ -255,6 +262,8 @@ fn transparency() {
     layout.add_key(0xCC, c, Ignore);
     layout.add_key(0x01, c, Character('C'));
     layout.add_key(0x04, c, Character('C'));
+
+    let layout = layout.build();
 
     let mut kb = VirtualKeyboard::new(layout);
 
@@ -329,7 +338,7 @@ fn transparency() {
 
 #[test]
 fn layer_lock_shared_path() {
-    let mut layout = Layout::new();
+    let mut layout = LayoutBuilder::new();
     let base = layout.add_layer();
     let a = layout.add_layer();
     let b = layout.add_layer();
@@ -351,6 +360,8 @@ fn layer_lock_shared_path() {
     layout.add_layer_lock(0xBD, d, d);
     layout.add_layer_lock(0xCD, d, d);
     layout.add_key(0xFF, d, Character('X'));
+
+    let layout = layout.build();
 
     let mut kb = VirtualKeyboard::new(layout);
 
@@ -375,7 +386,7 @@ fn layer_lock_shared_path() {
 
 #[test]
 fn layer_lock_caps() {
-    let mut layout = Layout::new();
+    let mut layout = LayoutBuilder::new();
     let base = layout.add_layer();
     let shift = layout.add_layer();
 
@@ -386,6 +397,8 @@ fn layer_lock_caps() {
 
     // shift layer
     layout.add_key(0xFF, shift, Character('X'));
+
+    let layout = layout.build();
 
     let mut kb = VirtualKeyboard::new(layout);
 
@@ -415,7 +428,7 @@ fn layer_lock_caps() {
 
 #[test]
 fn layer_lock_caps_neo() {
-    let mut layout = Layout::new();
+    let mut layout = LayoutBuilder::new();
     let base = layout.add_layer();
     let shift = layout.add_layer();
 
@@ -434,6 +447,8 @@ fn layer_lock_caps_neo() {
     layout.add_layer_lock(0xE036, shift, shift);
 
     layout.add_key(0xFF, shift, Character('X'));
+
+    let layout = layout.build();
 
     let mut kb = VirtualKeyboard::new(layout);
 

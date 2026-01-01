@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::layout::{KeyAction, LayerIdx, Layout};
+use crate::layout::{KeyAction, LayerIdx, LayoutBuilder, LayoutStorage};
 
 pub const INVALID_LAYER_IDX: LayerIdx = LayerIdx::MAX;
 
@@ -39,10 +39,9 @@ enum MappingTarget {
     },
 }
 
-#[derive(Debug)]
 pub struct Config {
     pub caps_lock_layer_idx: LayerIdx,
-    pub layout: Layout,
+    pub layout: LayoutStorage,
 }
 
 #[derive(Debug, Error)]
@@ -57,7 +56,7 @@ impl TryFrom<ReadableConfig> for Config {
     type Error = ConfigError;
 
     fn try_from(config: ReadableConfig) -> Result<Self, Self::Error> {
-        let mut layout = Layout::new();
+        let mut layout = LayoutBuilder::new();
 
         if !config.layers.contains_key(&config.base_layer) {
             return Err(ConfigError::InvalidBaseLayer);
@@ -145,7 +144,7 @@ impl TryFrom<ReadableConfig> for Config {
 
         Ok(Self {
             caps_lock_layer_idx,
-            layout,
+            layout: layout.build(),
         })
     }
 }

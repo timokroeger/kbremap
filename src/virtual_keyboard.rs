@@ -1,14 +1,13 @@
 //! Remapping and layer switching logic.
 
-use crate::layout::{KeyAction, Layout};
-use crate::{LayerIdx, ScanCode};
+use crate::layout::{KeyAction, LayerIdx, Layout, ScanCode};
 
 const BASE_LAYER: LayerIdx = 0;
 
 /// Collection of virtual keyboard layers and logic to switch between them
 /// depending on which modifier keys are pressed.
 #[derive(Debug)]
-pub struct VirtualKeyboard {
+pub struct VirtualKeyboard<L: Layout> {
     /// Layer used when no modifier keys are pressed.
     locked_layer: LayerIdx,
 
@@ -25,12 +24,12 @@ pub struct VirtualKeyboard {
     pressed_keys: Vec<(ScanCode, Option<KeyAction>)>,
 
     /// Immutable information about the layout.
-    layout: Layout,
+    layout: L,
 }
 
-impl VirtualKeyboard {
+impl<L: Layout> VirtualKeyboard<L> {
     /// Create a new virtual keyboard with `layout`.
-    pub fn new(layout: Layout) -> Self {
+    pub fn new(layout: L) -> Self {
         Self {
             locked_layer: BASE_LAYER,
             layer_history: vec![BASE_LAYER],

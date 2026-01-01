@@ -17,8 +17,13 @@ pub enum KeyAction {
 pub type ScanCode = u16;
 pub type LayerIdx = u8;
 
-#[derive(Debug)]
-pub struct Layout {
+pub trait Layout {
+    fn action(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<KeyAction>;
+    fn layer_modifier(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx>;
+    fn layer_lock(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx>;
+}
+
+pub struct LayoutStorage {
     /// Key action for all keys including modifiers and locks.
     keymap: HashMap<(LayerIdx, ScanCode), KeyAction>,
 
@@ -27,22 +32,21 @@ pub struct Layout {
 
     /// Map of keys that lock a specific layer when pressed.
     locks: HashMap<(LayerIdx, ScanCode), LayerIdx>,
+}
 
+pub struct LayoutBuilder {
+    storage: LayoutStorage,
     max_layer: LayerIdx,
 }
 
-impl Default for Layout {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Layout {
+impl LayoutBuilder {
     pub fn new() -> Self {
         Self {
-            keymap: HashMap::new(),
-            modifiers: HashMap::new(),
-            locks: HashMap::new(),
+            storage: LayoutStorage {
+                keymap: HashMap::new(),
+                modifiers: HashMap::new(),
+                locks: HashMap::new(),
+            },
             max_layer: 0,
         }
     }
@@ -54,26 +58,34 @@ impl Layout {
     }
 
     pub fn add_key(&mut self, scan_code: ScanCode, layer: LayerIdx, action: KeyAction) {
-        self.keymap.insert((layer, scan_code), action);
+        self.storage.keymap.insert((layer, scan_code), action);
     }
 
     pub fn add_modifier(&mut self, scan_code: ScanCode, layer: LayerIdx, target_layer: LayerIdx) {
-        self.modifiers.insert((layer, scan_code), target_layer);
+        self.storage
+            .modifiers
+            .insert((layer, scan_code), target_layer);
     }
 
     pub fn add_layer_lock(&mut self, scan_code: ScanCode, layer: LayerIdx, target_layer: LayerIdx) {
-        self.locks.insert((layer, scan_code), target_layer);
+        self.storage.locks.insert((layer, scan_code), target_layer);
     }
 
-    pub fn action(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<KeyAction> {
+    pub fn build(self) -> LayoutStorage {
+        self.storage
+    }
+}
+
+impl Layout for LayoutStorage {
+    fn action(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<KeyAction> {
         self.keymap.get(&(layer, scan_code)).copied()
     }
 
-    pub fn layer_modifier(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx> {
+    fn layer_modifier(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx> {
         self.modifiers.get(&(layer, scan_code)).copied()
     }
 
-    pub fn layer_lock(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx> {
+    fn layer_lock(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<LayerIdx> {
         self.locks.get(&(layer, scan_code)).copied()
     }
 }
