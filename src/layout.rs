@@ -17,8 +17,6 @@ pub enum KeyAction {
 pub type ScanCode = u16;
 pub type LayerIdx = u8;
 
-const INVALID_LAYER_IDX: LayerIdx = LayerIdx::MAX;
-
 #[derive(Debug, Clone)]
 pub struct Layout {
     /// Key action for all keys including modifiers and locks.
@@ -32,9 +30,6 @@ pub struct Layout {
 
     /// Names of the layers.
     layer_names: Vec<String>,
-
-    /// Active layer when no modifier is pressed.
-    base_layer: LayerIdx,
 }
 
 impl Default for Layout {
@@ -50,7 +45,6 @@ impl Layout {
             modifiers: HashMap::new(),
             locks: HashMap::new(),
             layer_names: Vec::new(),
-            base_layer: INVALID_LAYER_IDX,
         }
     }
 
@@ -58,10 +52,6 @@ impl Layout {
         let layer_idx = self.layer_names.len().try_into().expect("too many layers");
         self.layer_names.push(name);
         layer_idx
-    }
-
-    pub fn set_base_layer(&mut self, layer: LayerIdx) {
-        self.base_layer = layer;
     }
 
     pub fn add_key(&mut self, scan_code: ScanCode, layer: LayerIdx, action: KeyAction) {
@@ -76,18 +66,9 @@ impl Layout {
         self.locks.insert((layer, scan_code), target_layer);
     }
 
-    pub fn is_valid(&self) -> bool {
-        self.base_layer != INVALID_LAYER_IDX
-    }
-
     pub fn layer_name(&self, layer: LayerIdx) -> &str {
         &self.layer_names[usize::from(layer)]
     }
-
-    pub fn base_layer(&self) -> LayerIdx {
-        self.base_layer
-    }
-
     pub fn action(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<KeyAction> {
         self.keymap.get(&(layer, scan_code)).copied()
     }

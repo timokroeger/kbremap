@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Result, ensure};
+use anyhow::{Result, bail, ensure};
 use serde::Deserialize;
 
 use crate::layout::{KeyAction, Layout};
@@ -44,12 +44,7 @@ pub struct Config {
 }
 
 pub fn parse_config_toml(config: &str) -> Result<Config> {
-    let config: ReadableConfig = toml::from_str(config)?;
-
-    ensure!(
-        config.layers.contains_key(&config.base_layer),
-        "base layer not found"
-    );
+    let mut config: ReadableConfig = toml::from_str(config)?;
 
     if let Some(caps_lock_layer) = &config.caps_lock_layer {
         ensure!(
@@ -62,14 +57,21 @@ pub fn parse_config_toml(config: &str) -> Result<Config> {
     let mut name_to_idx = HashMap::new();
     let mut mappings = Vec::new();
 
-    // First pass: add layers and track their indices.
-    for (name, mapping) in config.layers {
+    let mut add_layer = |name: String, mapping| {
         let layer_idx = layout.add_layer(name.clone());
-        if name == config.base_layer {
-            layout.set_base_layer(layer_idx);
-        }
         name_to_idx.insert(name, layer_idx);
         mappings.push((layer_idx, mapping));
+    };
+
+    // Base layer must be added first.
+    let Some(mapping) = config.layers.remove(&config.base_layer) else {
+        bail!("base layer not found");
+    };
+    add_layer(config.base_layer, mapping);
+
+    // First pass: add layers and track their indices.
+    for (name, mapping) in config.layers {
+        add_layer(name, mapping)
     }
 
     // Second pass: add mappings.
