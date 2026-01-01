@@ -5,7 +5,10 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::layout::{KeyAction, Layout};
+use crate::{
+    INVALID_LAYER_IDX, LayerIdx,
+    layout::{KeyAction, Layout},
+};
 
 #[derive(Debug, Deserialize)]
 pub struct ReadableConfig {
@@ -39,7 +42,7 @@ enum MappingTarget {
 
 #[derive(Debug)]
 pub struct Config {
-    pub caps_lock_layer: Option<String>,
+    pub caps_lock_layer_idx: LayerIdx,
     pub layout: Layout,
 }
 
@@ -67,12 +70,18 @@ impl TryFrom<ReadableConfig> for Config {
             return Err(ConfigError::InvalidCapsLockLayer);
         }
 
+        let mut caps_lock_layer_idx = INVALID_LAYER_IDX;
         let mut layers = HashMap::with_capacity(config.layers.len());
 
         for (name, mapping) in config.layers {
-            let layer_idx = layout.add_layer(name.clone());
+            let layer_idx = layout.add_layer();
             if name == config.base_layer {
                 layout.set_base_layer(layer_idx);
+            }
+            if let Some(caps_lock_layer) = &config.caps_lock_layer
+                && name == *caps_lock_layer
+            {
+                caps_lock_layer_idx = layer_idx;
             }
             layers.insert(name, (layer_idx, mapping));
         }
@@ -133,7 +142,7 @@ impl TryFrom<ReadableConfig> for Config {
         }
 
         Ok(Self {
-            caps_lock_layer: config.caps_lock_layer,
+            caps_lock_layer_idx,
             layout,
         })
     }

@@ -4,11 +4,11 @@ use kbremap::{Layout, VirtualKeyboard};
 #[test]
 fn layer_activation() {
     let mut layout = Layout::new();
-    let base = layout.add_layer(String::from("base"));
+    let base = layout.add_layer();
     layout.set_base_layer(base);
-    let a = layout.add_layer(String::from("a"));
-    let b = layout.add_layer(String::from("b"));
-    let c = layout.add_layer(String::from("c"));
+    let a = layout.add_layer();
+    let b = layout.add_layer();
+    let c = layout.add_layer();
     layout.add_modifier(0x11, base, a);
     layout.add_key(0x11, base, Ignore);
     layout.add_modifier(0x12, base, b);
@@ -82,9 +82,9 @@ fn layer_activation() {
 #[test]
 fn accidental_shift_lock_issue25() {
     let mut layout = Layout::new();
-    let base = layout.add_layer(String::from("base"));
+    let base = layout.add_layer();
     layout.set_base_layer(base);
-    let shift = layout.add_layer(String::from("shift"));
+    let shift = layout.add_layer();
     layout.add_modifier(0x2A, base, shift);
     layout.add_key(0x2A, base, VirtualKey(0xA0));
     layout.add_modifier(0xE036, base, shift);
@@ -101,11 +101,11 @@ fn accidental_shift_lock_issue25() {
 #[test]
 fn masked_modifier_on_base_layer() {
     let mut layout = Layout::new();
-    let base = layout.add_layer(String::from("base"));
+    let base = layout.add_layer();
     layout.set_base_layer(base);
-    let a = layout.add_layer(String::from("a"));
-    let b = layout.add_layer(String::from("b"));
-    let c = layout.add_layer(String::from("c"));
+    let a = layout.add_layer();
+    let b = layout.add_layer();
+    let c = layout.add_layer();
     layout.add_modifier(0x0A, base, a);
     layout.add_key(0x0A, base, Ignore);
     layout.add_modifier(0x0B, base, b);
@@ -147,11 +147,11 @@ fn masked_modifier_on_base_layer() {
 #[test]
 fn layer_lock() {
     let mut layout = Layout::new();
-    let base = layout.add_layer(String::from("base"));
+    let base = layout.add_layer();
     layout.set_base_layer(base);
-    let a = layout.add_layer(String::from("a"));
-    let b = layout.add_layer(String::from("b"));
-    let c = layout.add_layer(String::from("c"));
+    let a = layout.add_layer();
+    let b = layout.add_layer();
+    let c = layout.add_layer();
 
     layout.add_modifier(0x0A, base, a);
     layout.add_key(0x0A, base, Ignore);
@@ -242,10 +242,10 @@ fn layer_lock() {
 #[test]
 fn transparency() {
     let mut layout = Layout::new();
-    let a = layout.add_layer(String::from("a"));
+    let a = layout.add_layer();
     layout.set_base_layer(a);
-    let b = layout.add_layer(String::from("b"));
-    let c = layout.add_layer(String::from("c"));
+    let b = layout.add_layer();
+    let c = layout.add_layer();
 
     layout.add_modifier(0xAB, a, b);
     layout.add_key(0xAB, a, Ignore);
@@ -335,12 +335,12 @@ fn transparency() {
 #[test]
 fn layer_lock_shared_path() {
     let mut layout = Layout::new();
-    let base = layout.add_layer(String::from("base"));
+    let base = layout.add_layer();
     layout.set_base_layer(base);
-    let a = layout.add_layer(String::from("a"));
-    let b = layout.add_layer(String::from("b"));
-    let c = layout.add_layer(String::from("c"));
-    let d = layout.add_layer(String::from("d"));
+    let a = layout.add_layer();
+    let b = layout.add_layer();
+    let c = layout.add_layer();
+    let d = layout.add_layer();
 
     layout.add_modifier(0x0A, base, a);
     layout.add_key(0x0A, base, Ignore);
@@ -382,9 +382,9 @@ fn layer_lock_shared_path() {
 #[test]
 fn layer_lock_caps() {
     let mut layout = Layout::new();
-    let base = layout.add_layer(String::from("base"));
+    let base = layout.add_layer();
     layout.set_base_layer(base);
-    let shift = layout.add_layer(String::from("shift"));
+    let shift = layout.add_layer();
 
     // base layer
     layout.add_layer_lock(0x3A, base, shift); // caps lock
@@ -423,9 +423,9 @@ fn layer_lock_caps() {
 #[test]
 fn layer_lock_caps_neo() {
     let mut layout = Layout::new();
-    let base = layout.add_layer(String::from("base"));
+    let base = layout.add_layer();
     layout.set_base_layer(base);
-    let shift = layout.add_layer(String::from("shift"));
+    let shift = layout.add_layer();
 
     layout.add_modifier(0x2A, base, shift);
     layout.add_key(0x2A, base, VirtualKey(0xA0)); // forward shift vk

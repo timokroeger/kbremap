@@ -48,12 +48,8 @@ impl VirtualKeyboard {
         *self.layer_history.last().unwrap()
     }
 
-    pub fn active_layer(&self) -> &str {
-        self.layout.layer_name(self.active_layer_idx())
-    }
-
-    pub fn locked_layer(&self) -> &str {
-        self.layout.layer_name(self.locked_layer)
+    pub fn locked_layer_idx(&self) -> LayerIdx {
+        self.locked_layer
     }
 
     /// Returns the layer activated by the currently pressed modifier keys.

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::{env, fs, process};
 
 use anyhow::{Context, Result};
-use kbremap::{Config, KeyAction, ReadableConfig, VirtualKeyboard};
+use kbremap::{Config, INVALID_LAYER_IDX, KeyAction, ReadableConfig, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::{MF_CHECKED, MF_DISABLED};
 
@@ -110,8 +110,9 @@ async fn remap_keys(config: Config) {
 
         // Special caps lock handling:
         // Make sure the caps lock state stays in sync with the configured layer.
-        if let Some(caps_lock_layer) = &config.caps_lock_layer
-            && (kb.locked_layer() == caps_lock_layer) != keyboard::caps_lock_enabled()
+        if config.caps_lock_layer_idx != INVALID_LAYER_IDX
+            && (kb.locked_layer_idx() == config.caps_lock_layer_idx)
+                != keyboard::caps_lock_enabled()
         {
             keyboard::send_key(KeyEvent {
                 up: false,
