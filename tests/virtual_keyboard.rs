@@ -5,7 +5,6 @@ use kbremap::{Layout, VirtualKeyboard};
 fn layer_activation() {
     let mut layout = Layout::new();
     let base = layout.add_layer();
-    layout.set_base_layer(base);
     let a = layout.add_layer();
     let b = layout.add_layer();
     let c = layout.add_layer();
@@ -83,7 +82,6 @@ fn layer_activation() {
 fn accidental_shift_lock_issue25() {
     let mut layout = Layout::new();
     let base = layout.add_layer();
-    layout.set_base_layer(base);
     let shift = layout.add_layer();
     layout.add_modifier(0x2A, base, shift);
     layout.add_key(0x2A, base, VirtualKey(0xA0));
@@ -102,7 +100,6 @@ fn accidental_shift_lock_issue25() {
 fn masked_modifier_on_base_layer() {
     let mut layout = Layout::new();
     let base = layout.add_layer();
-    layout.set_base_layer(base);
     let a = layout.add_layer();
     let b = layout.add_layer();
     let c = layout.add_layer();
@@ -148,7 +145,6 @@ fn masked_modifier_on_base_layer() {
 fn layer_lock() {
     let mut layout = Layout::new();
     let base = layout.add_layer();
-    layout.set_base_layer(base);
     let a = layout.add_layer();
     let b = layout.add_layer();
     let c = layout.add_layer();
@@ -243,7 +239,6 @@ fn layer_lock() {
 fn transparency() {
     let mut layout = Layout::new();
     let a = layout.add_layer();
-    layout.set_base_layer(a);
     let b = layout.add_layer();
     let c = layout.add_layer();
 
@@ -336,7 +331,6 @@ fn transparency() {
 fn layer_lock_shared_path() {
     let mut layout = Layout::new();
     let base = layout.add_layer();
-    layout.set_base_layer(base);
     let a = layout.add_layer();
     let b = layout.add_layer();
     let c = layout.add_layer();
@@ -383,7 +377,6 @@ fn layer_lock_shared_path() {
 fn layer_lock_caps() {
     let mut layout = Layout::new();
     let base = layout.add_layer();
-    layout.set_base_layer(base);
     let shift = layout.add_layer();
 
     // base layer
@@ -424,7 +417,6 @@ fn layer_lock_caps() {
 fn layer_lock_caps_neo() {
     let mut layout = Layout::new();
     let base = layout.add_layer();
-    layout.set_base_layer(base);
     let shift = layout.add_layer();
 
     layout.add_modifier(0x2A, base, shift);
@@ -474,10 +466,4 @@ fn layer_lock_caps_neo() {
     // base layer
     assert_eq!(kb.press_key(0xFF), Some(Character('x')));
     assert_eq!(kb.release_key(0xFF), Some(Character('x')));
-}
-
-#[test]
-fn empty_configuration() {
-    let layout = Layout::new();
-    assert!(!layout.is_valid());
 }

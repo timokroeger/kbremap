@@ -17,9 +17,7 @@ pub enum KeyAction {
 pub type ScanCode = u16;
 pub type LayerIdx = u8;
 
-pub const INVALID_LAYER_IDX: LayerIdx = LayerIdx::MAX;
-
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Layout {
     /// Key action for all keys including modifiers and locks.
     keymap: HashMap<(LayerIdx, ScanCode), KeyAction>,
@@ -29,9 +27,6 @@ pub struct Layout {
 
     /// Map of keys that lock a specific layer when pressed.
     locks: HashMap<(LayerIdx, ScanCode), LayerIdx>,
-
-    /// Active layer when no modifier is pressed.
-    base_layer: LayerIdx,
 
     max_layer: LayerIdx,
 }
@@ -48,7 +43,6 @@ impl Layout {
             keymap: HashMap::new(),
             modifiers: HashMap::new(),
             locks: HashMap::new(),
-            base_layer: INVALID_LAYER_IDX,
             max_layer: 0,
         }
     }
@@ -57,10 +51,6 @@ impl Layout {
         let layer_idx = self.max_layer;
         self.max_layer += 1;
         layer_idx
-    }
-
-    pub fn set_base_layer(&mut self, layer: LayerIdx) {
-        self.base_layer = layer;
     }
 
     pub fn add_key(&mut self, scan_code: ScanCode, layer: LayerIdx, action: KeyAction) {
@@ -73,14 +63,6 @@ impl Layout {
 
     pub fn add_layer_lock(&mut self, scan_code: ScanCode, layer: LayerIdx, target_layer: LayerIdx) {
         self.locks.insert((layer, scan_code), target_layer);
-    }
-
-    pub fn is_valid(&self) -> bool {
-        self.base_layer != INVALID_LAYER_IDX
-    }
-
-    pub fn base_layer(&self) -> LayerIdx {
-        self.base_layer
     }
 
     pub fn action(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<KeyAction> {

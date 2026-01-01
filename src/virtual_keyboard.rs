@@ -3,6 +3,8 @@
 use crate::layout::{KeyAction, Layout};
 use crate::{LayerIdx, ScanCode};
 
+const BASE_LAYER: LayerIdx = 0;
+
 /// Collection of virtual keyboard layers and logic to switch between them
 /// depending on which modifier keys are pressed.
 #[derive(Debug)]
@@ -29,18 +31,17 @@ pub struct VirtualKeyboard {
 impl VirtualKeyboard {
     /// Create a new virtual keyboard with `layout`.
     pub fn new(layout: Layout) -> Self {
-        assert!(layout.is_valid());
         Self {
-            locked_layer: layout.base_layer(),
-            layer_history: vec![layout.base_layer()],
+            locked_layer: BASE_LAYER,
+            layer_history: vec![BASE_LAYER],
             pressed_keys: Vec::new(),
             layout,
         }
     }
 
     pub fn reset(&mut self) {
-        self.locked_layer = self.layout.base_layer();
-        self.layer_history = vec![self.layout.base_layer()];
+        self.locked_layer = BASE_LAYER;
+        self.layer_history = vec![BASE_LAYER];
         self.pressed_keys.clear();
     }
 
@@ -131,16 +132,16 @@ impl VirtualKeyboard {
             .rev()
             .find_map(|layer| self.layout.action(*layer, scan_code));
 
-        if self.locked_layer == self.layout.base_layer() {
+        if self.locked_layer == BASE_LAYER {
             if let Some(target_layer) = self.layout.layer_lock(self.active_layer_idx(), scan_code) {
                 self.lock_layer(target_layer);
             }
         } else {
             // Try to unlock a previously locked layer
-            let active_layer_from_base = self.find_layer_activation(self.layout.base_layer());
+            let active_layer_from_base = self.find_layer_activation(BASE_LAYER);
             let layer_to_lock = self.layout.layer_lock(active_layer_from_base, scan_code);
             if layer_to_lock == Some(self.locked_layer) {
-                self.lock_layer(self.layout.base_layer());
+                self.lock_layer(BASE_LAYER);
             }
         }
 

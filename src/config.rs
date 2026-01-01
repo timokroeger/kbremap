@@ -5,10 +5,9 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::{
-    INVALID_LAYER_IDX, LayerIdx,
-    layout::{KeyAction, Layout},
-};
+use crate::layout::{KeyAction, LayerIdx, Layout};
+
+pub const INVALID_LAYER_IDX: LayerIdx = LayerIdx::MAX;
 
 #[derive(Debug, Deserialize)]
 pub struct ReadableConfig {
@@ -70,14 +69,17 @@ impl TryFrom<ReadableConfig> for Config {
             return Err(ConfigError::InvalidCapsLockLayer);
         }
 
+        // Base layer must be added first.
+        let base_layer_idx = layout.add_layer();
         let mut caps_lock_layer_idx = INVALID_LAYER_IDX;
         let mut layers = HashMap::with_capacity(config.layers.len());
 
         for (name, mapping) in config.layers {
-            let layer_idx = layout.add_layer();
-            if name == config.base_layer {
-                layout.set_base_layer(layer_idx);
-            }
+            let layer_idx = if name == config.base_layer {
+                base_layer_idx
+            } else {
+                layout.add_layer()
+            };
             if let Some(caps_lock_layer) = &config.caps_lock_layer
                 && name == *caps_lock_layer
             {
