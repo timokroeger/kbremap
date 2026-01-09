@@ -37,45 +37,50 @@ pub struct Layout {
     caps_lock_layer: LayerIdx,
 }
 
-impl Default for Layout {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+pub struct LayoutBuilder(Layout);
 
-impl Layout {
+impl LayoutBuilder {
     pub fn new() -> Self {
-        Self {
+        Self(Layout {
             keymap: HashMap::new(),
             modifiers: HashMap::new(),
             locks: HashMap::new(),
             layer_names: Vec::new(),
             caps_lock_layer: INVALID_LAYER_IDX,
-        }
+        })
     }
 
     pub fn add_layer(&mut self, name: String) -> LayerIdx {
-        let layer_idx = self.layer_names.len().try_into().expect("too many layers");
-        self.layer_names.push(name);
+        let layer_idx = self.0.layer_names.len() as LayerIdx;
+        if layer_idx == LayerIdx::MAX - 1 {
+            panic!("too many layers");
+        }
+        self.0.layer_names.push(name);
         layer_idx
     }
 
     pub fn add_key(&mut self, scan_code: ScanCode, layer: LayerIdx, action: KeyAction) {
-        self.keymap.insert((layer, scan_code), action);
+        self.0.keymap.insert((layer, scan_code), action);
     }
 
     pub fn add_modifier(&mut self, scan_code: ScanCode, layer: LayerIdx, target_layer: LayerIdx) {
-        self.modifiers.insert((layer, scan_code), target_layer);
+        self.0.modifiers.insert((layer, scan_code), target_layer);
     }
 
     pub fn add_layer_lock(&mut self, scan_code: ScanCode, layer: LayerIdx, target_layer: LayerIdx) {
-        self.locks.insert((layer, scan_code), target_layer);
+        self.0.locks.insert((layer, scan_code), target_layer);
     }
 
     pub fn set_caps_lock_layer(&mut self, layer: LayerIdx) {
-        self.caps_lock_layer = layer;
+        self.0.caps_lock_layer = layer;
     }
 
+    pub fn build(self) -> Layout {
+        self.0
+    }
+}
+
+impl Layout {
     pub fn layer_name(&self, layer: LayerIdx) -> &str {
         &self.layer_names[usize::from(layer)]
     }

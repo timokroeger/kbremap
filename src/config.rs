@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use anyhow::{Result, bail};
 use serde::Deserialize;
 
-use crate::layout::{KeyAction, Layout};
+use crate::layout::{KeyAction, Layout, LayoutBuilder};
 
 #[derive(Debug, Deserialize)]
 struct ReadableConfig {
@@ -41,7 +41,7 @@ impl Layout {
     pub fn parse_toml(config: &str) -> Result<Self> {
         let mut config: ReadableConfig = toml::from_str(config)?;
 
-        let mut layout = Layout::new();
+        let mut layout = LayoutBuilder::new();
         let mut name_to_idx = HashMap::new();
         let mut mappings = Vec::new();
 
@@ -125,6 +125,6 @@ impl Layout {
             layout.set_caps_lock_layer(*caps_lock_layer_idx);
         }
 
-        Ok(layout)
+        Ok(layout.build())
     }
 }
