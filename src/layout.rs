@@ -17,6 +17,8 @@ pub enum KeyAction {
 pub type ScanCode = u16;
 pub type LayerIdx = u8;
 
+const INVALID_LAYER_IDX: LayerIdx = LayerIdx::MAX;
+
 #[derive(Debug, Clone)]
 pub struct Layout {
     /// Key action for all keys including modifiers and locks.
@@ -30,6 +32,9 @@ pub struct Layout {
 
     /// Names of the layers.
     layer_names: Vec<String>,
+
+    /// Optional layer tied to the caps lock state.
+    caps_lock_layer: LayerIdx,
 }
 
 impl Default for Layout {
@@ -45,6 +50,7 @@ impl Layout {
             modifiers: HashMap::new(),
             locks: HashMap::new(),
             layer_names: Vec::new(),
+            caps_lock_layer: INVALID_LAYER_IDX,
         }
     }
 
@@ -66,9 +72,22 @@ impl Layout {
         self.locks.insert((layer, scan_code), target_layer);
     }
 
+    pub fn set_caps_lock_layer(&mut self, layer: LayerIdx) {
+        self.caps_lock_layer = layer;
+    }
+
     pub fn layer_name(&self, layer: LayerIdx) -> &str {
         &self.layer_names[usize::from(layer)]
     }
+
+    pub fn caps_lock_layer(&self) -> Option<LayerIdx> {
+        if self.caps_lock_layer == INVALID_LAYER_IDX {
+            None
+        } else {
+            Some(self.caps_lock_layer)
+        }
+    }
+
     pub fn action(&self, layer: LayerIdx, scan_code: ScanCode) -> Option<KeyAction> {
         self.keymap.get(&(layer, scan_code)).copied()
     }

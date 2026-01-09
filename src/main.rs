@@ -9,14 +9,14 @@ use std::path::Path;
 use std::{env, fs, process};
 
 use anyhow::{Context, Result};
-use kbremap::{Config, KeyAction, VirtualKeyboard};
+use kbremap::{KeyAction, Layout, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::{MF_CHECKED, MF_DISABLED};
 
 use crate::winapi::keyboard::{self, KeyEvent, KeyType};
 use crate::winapi::{AutoStartEntry, StaticIcon, TrayIcon, TrayIconEvent};
 
-fn load_config() -> Result<Config> {
+fn load_config() -> Result<Layout> {
     let config_file = env::args_os()
         .nth(1)
         .unwrap_or_else(|| "config.toml".into());
@@ -38,7 +38,7 @@ fn load_config() -> Result<Config> {
         config_file.display()
     ))?;
 
-    kbremap::parse_config_toml(&fs::read_to_string(config_file)?)
+    Layout::parse_toml(&fs::read_to_string(config_file)?)
 }
 
 struct App {
@@ -92,8 +92,8 @@ impl App {
     }
 }
 
-async fn remap_keys(config: Config) {
-    let mut kb = VirtualKeyboard::new(config.layout);
+async fn remap_keys(layout: Layout) {
+    let mut kb = VirtualKeyboard::new(layout);
     loop {
         let mut key_event = keyboard::next_key_event().await;
 
@@ -103,11 +103,11 @@ async fn remap_keys(config: Config) {
             kb.press_key(key_event.scan_code)
         };
 
-        // Special caps lock handling:
-        // Make sure the caps lock state stays in sync with the configured layer.
-        if let Some(caps_lock_layer) = &config.caps_lock_layer
-            && (kb.locked_layer() == caps_lock_layer) != keyboard::caps_lock_enabled()
-        {
+        // Make sure the caps lock state stays in sync with our layout.
+        // We can get out of sync when caps lock is pressed in elevated context
+        // but our program is not elevated. In which we turn want to toggle the
+        // caps lock state back to what we expect it to be.
+        if kb.caps_lock_enabled() != keyboard::caps_lock_enabled() {
             keyboard::send_key(KeyEvent {
                 up: false,
                 key: KeyType::VirtualKey(VK_CAPITAL as _),

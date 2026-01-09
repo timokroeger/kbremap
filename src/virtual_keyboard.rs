@@ -57,6 +57,10 @@ impl VirtualKeyboard {
         self.layout.layer_name(self.locked_layer)
     }
 
+    pub fn caps_lock_enabled(&self) -> bool {
+        matches!(self.layout.caps_lock_layer(), Some(layer) if self.locked_layer == layer)
+    }
+
     /// Returns the layer activated by the currently pressed modifier keys.
     fn find_layer_activation(&self, starting_layer: LayerIdx) -> LayerIdx {
         let mut layer = starting_layer;
