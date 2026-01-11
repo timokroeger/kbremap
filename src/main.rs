@@ -5,24 +5,27 @@ mod resources;
 mod winapi;
 
 use std::cell::Cell;
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::{env, fs, process};
 
 use anyhow::{Context, Result};
-use kbremap::{Config, KeyAction, ReadableConfig, VirtualKeyboard};
+use kbremap::{Config, KeyAction, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::{MF_CHECKED, MF_DISABLED};
 
 use crate::winapi::keyboard::{self, KeyEvent, KeyType};
 use crate::winapi::{AutoStartEntry, StaticIcon, TrayIcon, TrayIconEvent};
 
-fn config_path(config_file: &OsStr) -> Result<PathBuf> {
-    let mut path_buf;
-    let mut config_file = Path::new(config_file);
+fn load_config() -> Result<Config> {
+    let config_file = env::args_os()
+        .nth(1)
+        .unwrap_or_else(|| "config.toml".into());
+
+    let mut config_file = Path::new(&config_file);
 
     // Could not find the configuration file in current working directory.
     // Check if a config file with same name exists next to our executable.
+    let mut path_buf;
     if !config_file.exists() && config_file.is_relative() {
         path_buf = env::current_exe()?;
         path_buf.pop();
@@ -30,20 +33,12 @@ fn config_path(config_file: &OsStr) -> Result<PathBuf> {
         config_file = path_buf.as_path();
     }
 
-    config_file.canonicalize().context(format!(
-        "Cannot load configuration {}",
+    let config_file = config_file.canonicalize().context(format!(
+        "cannot load configuration file {}",
         config_file.display()
-    ))
-}
+    ))?;
 
-fn load_config() -> Result<Config> {
-    let config_file = env::args_os()
-        .nth(1)
-        .unwrap_or_else(|| "config.toml".into());
-    let config_file = config_path(&config_file)?;
-    let config_str = fs::read_to_string(config_file)?;
-    let config: ReadableConfig = toml::from_str(&config_str)?;
-    Ok(Config::try_from(config)?)
+    kbremap::parse_config_toml(&fs::read_to_string(config_file)?)
 }
 
 struct App {
