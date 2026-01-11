@@ -45,11 +45,18 @@ fn load_config() -> Result<Layout> {
     Layout::parse_toml(&fs::read_to_string(config_file)?)
 }
 
+#[derive(Debug, Clone, Copy)]
+enum EnableState {
+    Enabled,
+    Disabled,
+    ReEnabled,
+}
+
 struct App {
     running_in_terminal: bool,
     autostart: AutoStartEntry<'static>,
     tray_icon: TrayIcon,
-    enabled: Cell<bool>,
+    enable_state: Cell<EnableState>,
 }
 
 impl App {
@@ -61,7 +68,7 @@ impl App {
             running_in_terminal: winapi::console_check(),
             autostart: AutoStartEntry::new(c"kbremap"),
             tray_icon: TrayIcon::new(StaticIcon::from_rc_numeric(resources::ICON_KEYBOARD)),
-            enabled: Cell::new(true),
+            enable_state: Cell::new(EnableState::Enabled),
         }
     }
 
@@ -82,24 +89,32 @@ impl App {
     }
 
     fn toggle_enabled(&self) {
-        if self.enabled.get() {
-            self.tray_icon
-                .set_icon(StaticIcon::from_rc_numeric(resources::ICON_KEYBOARD_DELETE));
-            self.enabled.set(false);
-            keyboard::hook_disable();
-        } else {
-            self.tray_icon
-                .set_icon(StaticIcon::from_rc_numeric(resources::ICON_KEYBOARD));
-            self.enabled.set(true);
-            keyboard::hook_enable();
+        match self.enable_state.get() {
+            EnableState::Enabled | EnableState::ReEnabled => {
+                self.tray_icon
+                    .set_icon(StaticIcon::from_rc_numeric(resources::ICON_KEYBOARD_DELETE));
+                self.enable_state.set(EnableState::Disabled);
+                keyboard::hook_disable();
+            }
+            EnableState::Disabled => {
+                self.tray_icon
+                    .set_icon(StaticIcon::from_rc_numeric(resources::ICON_KEYBOARD));
+                self.enable_state.set(EnableState::ReEnabled);
+                keyboard::hook_enable();
+            }
         }
     }
 }
 
-async fn remap_keys(layout: Layout) {
+async fn remap_keys(layout: Layout, enable_state: &Cell<EnableState>) {
     let mut kb = VirtualKeyboard::new(layout);
     loop {
         let mut key_event = keyboard::next_key_event().await;
+
+        if matches!(enable_state.get(), EnableState::ReEnabled) {
+            kb.reset();
+            enable_state.set(EnableState::Enabled);
+        }
 
         let remap = if key_event.up {
             kb.release_key(key_event.scan_code)
@@ -151,6 +166,7 @@ async fn remap_keys(layout: Layout) {
 }
 
 fn main() -> Result<()> {
+    let layout = load_config()?;
     let app = Box::leak(Box::new(App::new()));
 
     const MENU_STARTUP: u32 = 1;
@@ -172,7 +188,11 @@ fn main() -> Result<()> {
             flag_checked(winapi::console_check()) | flag_disabled(app.running_in_terminal),
             c"Show debug output",
         );
-        menu.add_entry(MENU_DISABLE, flag_checked(!app.enabled.get()), c"Disable");
+        menu.add_entry(
+            MENU_DISABLE,
+            flag_checked(matches!(app.enable_state.get(), EnableState::Disabled)),
+            c"Disable",
+        );
         menu.add_entry(MENU_EXIT, 0, c"Exit");
     });
 
@@ -189,7 +209,7 @@ fn main() -> Result<()> {
     });
 
     // The executor runs the windows message loop internally.
-    winmsg_executor::block_on(remap_keys(load_config()?));
+    winmsg_executor::block_on(remap_keys(layout, &app.enable_state));
 
     Ok(())
 }
