@@ -1,8 +1,13 @@
 # Changelog
 
-## [Unreleased]
+## [2.1.0] - 2026-01-11
 
-- XXX
+- Menu entry to launch the application as Administator
+- New key handling approach to fix the (hopefully) last keyboard hook reentrancy bug.
+- Fix rare problem where a key was sent as unicode when typed right after switching layers even
+  though it existed as virtual key on the target layer.
+- Internal refactorings to improve readability
+- Remove unused internal library crate, move tests to source file.
 
 ## [2.0.1] - 2024-12-31
 
