@@ -169,15 +169,23 @@ fn main() -> Result<()> {
     let layout = load_config()?;
     let app = Box::leak(Box::new(App::new()));
 
-    const MENU_STARTUP: u32 = 1;
-    const MENU_DEBUG: u32 = 2;
-    const MENU_DISABLE: u32 = 3;
-    const MENU_EXIT: u32 = 4;
+    const MENU_RUN_ADMIN: u32 = 1;
+    const MENU_STARTUP: u32 = 2;
+    const MENU_DEBUG: u32 = 3;
+    const MENU_DISABLE: u32 = 4;
+    const MENU_EXIT: u32 = 5;
 
     app.tray_icon.on_menu(|menu| {
         let flag_checked = |condition| if condition { MF_CHECKED } else { 0 };
         let flag_disabled = |condition| if condition { MF_DISABLED } else { 0 };
 
+        let is_elevated = winapi::is_elevated();
+
+        menu.add_entry(
+            MENU_RUN_ADMIN,
+            flag_checked(is_elevated) | flag_disabled(is_elevated),
+            c"Run as Administrator",
+        );
         menu.add_entry(
             MENU_STARTUP,
             flag_checked(app.autostart.is_registered()),
@@ -202,6 +210,11 @@ fn main() -> Result<()> {
             TrayIconEvent::DoubleClick => app.toggle_enabled(),
             TrayIconEvent::MenuItem(MENU_STARTUP) => app.toggle_autostart(),
             TrayIconEvent::MenuItem(MENU_DEBUG) => app.toggle_debug_console(),
+            TrayIconEvent::MenuItem(MENU_RUN_ADMIN) => {
+                if winapi::elevate() {
+                    process::exit(0);
+                }
+            }
             TrayIconEvent::MenuItem(MENU_DISABLE) => app.toggle_enabled(),
             TrayIconEvent::MenuItem(MENU_EXIT) => process::exit(0),
             TrayIconEvent::MenuItem(_) => unreachable!(),
