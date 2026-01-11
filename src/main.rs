@@ -1,7 +1,10 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 #![cfg_attr(test, windows_subsystem = "console")]
 
+mod config;
+mod layout;
 mod resources;
+mod virtual_keyboard;
 mod winapi;
 
 use std::cell::Cell;
@@ -9,10 +12,11 @@ use std::path::Path;
 use std::{env, fs, process};
 
 use anyhow::{Context, Result};
-use kbremap::{KeyAction, Layout, VirtualKeyboard};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
 use windows_sys::Win32::UI::WindowsAndMessaging::{MF_CHECKED, MF_DISABLED};
 
+use crate::layout::{KeyAction, Layout};
+use crate::virtual_keyboard::VirtualKeyboard;
 use crate::winapi::keyboard::{self, KeyEvent, KeyType};
 use crate::winapi::{AutoStartEntry, StaticIcon, TrayIcon, TrayIconEvent};
 

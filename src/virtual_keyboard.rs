@@ -1,7 +1,6 @@
 //! Remapping and layer switching logic.
 
-use crate::layout::{KeyAction, Layout};
-use crate::{LayerIdx, ScanCode};
+use crate::layout::{KeyAction, LayerIdx, Layout, ScanCode};
 
 const BASE_LAYER: LayerIdx = 0;
 
@@ -49,10 +48,12 @@ impl VirtualKeyboard {
         *self.layer_history.last().unwrap()
     }
 
+    #[allow(unused)]
     pub fn active_layer(&self) -> &str {
         self.layout.layer_name(self.active_layer_idx())
     }
 
+    #[allow(unused)]
     pub fn locked_layer(&self) -> &str {
         self.layout.layer_name(self.locked_layer)
     }
@@ -181,8 +182,7 @@ impl VirtualKeyboard {
 
 #[cfg(test)]
 mod tests {
-    use crate::KeyAction::*;
-    use crate::LayoutBuilder;
+    use crate::layout::{KeyAction::*, LayoutBuilder};
 
     use super::*;
 
