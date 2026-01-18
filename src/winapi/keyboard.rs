@@ -245,6 +245,11 @@ pub fn get_virtual_key(c: char) -> Option<u8> {
             return None;
         }
 
+        let crtl_or_alt_required = vk_state & 0x600 != 0;
+        if crtl_or_alt_required {
+            return None;
+        }
+
         let dead_key =
             MapVirtualKeyExW((vk_state & 0xFF) as u32, MAPVK_VK_TO_CHAR, layout) & 0x80000000 != 0;
         if dead_key {
@@ -252,23 +257,13 @@ pub fn get_virtual_key(c: char) -> Option<u8> {
             return None;
         }
 
-        // Check if the modifier keys, which are required to type the character, are pressed.
-        let modifier_pressed = |vk: u16| (GetAsyncKeyState(vk.into()) as u16) & 0x8000 != 0;
+        let shift_required = vk_state & 0x100 != 0;
 
-        let shift = vk_state & 0x100 != 0;
-        if shift && (modifier_pressed(VK_SHIFT) == caps_lock_enabled()) {
-            // Shift required but not pressed and caps lock disabled OR
-            // Shift required and pressed but caps lock enabled (which cancels the shift press).
-            return None;
-        }
+        // The shift state is canceled when shift pressed but caps lock is enabled.
+        let shift_pressed = GetAsyncKeyState(VK_SHIFT.into()) < 0;
+        let shift_state = shift_pressed != caps_lock_enabled();
 
-        let ctrl = vk_state & 0x200 != 0;
-        if ctrl && !modifier_pressed(VK_CONTROL) {
-            return None;
-        }
-
-        let alt = vk_state & 0x400 != 0;
-        if alt && !modifier_pressed(VK_CONTROL) {
+        if shift_required != shift_state {
             return None;
         }
 
