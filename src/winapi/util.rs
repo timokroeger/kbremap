@@ -1,9 +1,9 @@
+use std::env;
 use std::mem;
 use std::ptr;
 
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Security::*;
-use windows_sys::Win32::System::Environment::GetCommandLineA;
 use windows_sys::Win32::System::Threading::*;
 use windows_sys::Win32::UI::Shell::ShellExecuteA;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -35,31 +35,24 @@ pub fn is_elevated() -> bool {
 }
 
 pub fn elevate() -> bool {
-    let cmdline = unsafe { GetCommandLineA() };
+    let mut args = env::args();
 
-    // Copy exe name to buffer with null terminator.
-    let mut param_offset = 0;
-    let mut exe_buf = [0; MAX_PATH as _];
-    for (offset, buf) in exe_buf.iter_mut().enumerate() {
-        let c = unsafe { *cmdline.add(offset) };
-        if c == 0 || c == b' ' {
-            *buf = 0;
-            param_offset = offset;
-            break;
-        }
-        *buf = c;
-    }
+    let mut exe = args.next().unwrap();
+    exe += "\0";
 
-    if param_offset == 0 {
-        return false;
+    let mut params = args.next().unwrap_or_default();
+    for arg in args {
+        params += " ";
+        params += &arg;
     }
+    params += "\0";
 
     unsafe {
         let ret = ShellExecuteA(
             ptr::null_mut(),
             c"runas".as_ptr().cast(),
-            exe_buf.as_ptr(),
-            cmdline.add(param_offset),
+            exe.as_ptr(),
+            params.as_ptr(),
             std::ptr::null(),
             SW_NORMAL,
         );
