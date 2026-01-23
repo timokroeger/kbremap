@@ -48,11 +48,16 @@ pub fn hook_disable() {
 pub async fn next_key_event() -> KeyEvent {
     poll_fn(|cx| {
         KEY_QUEUE.with_borrow_mut(|queue| {
-            if let Some(key) = queue.key_events.pop_front() {
-                Poll::Ready(key)
-            } else {
-                queue.waker.push(cx.waker().clone());
-                Poll::Pending
+            assert!(
+                queue.waker.is_none(),
+                "Only a single task can wait for key events."
+            );
+            match queue.key_events.pop_front() {
+                Some(key) => Poll::Ready(key),
+                None => {
+                    queue.waker = Some(cx.waker().clone());
+                    Poll::Pending
+                }
             }
         })
     })
@@ -159,20 +164,20 @@ unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -
 
 struct KeyQueue {
     key_events: VecDeque<KeyEvent>,
-    waker: Vec<Waker>,
+    waker: Option<Waker>,
 }
 
 impl KeyQueue {
     const fn new() -> Self {
         Self {
             key_events: VecDeque::new(),
-            waker: Vec::new(),
+            waker: None,
         }
     }
 
     fn enqueue(&mut self, key: KeyEvent) {
         self.key_events.push_back(key);
-        for waker in self.waker.drain(..) {
+        if let Some(waker) = self.waker.take() {
             waker.wake();
         }
     }
