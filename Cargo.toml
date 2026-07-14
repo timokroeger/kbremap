@@ -11,7 +11,7 @@ repository = "https://github.com/timokroeger/kbremap"
 anyhow = "1.0"
 encode_unicode = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-toml = "0.9.7"
+toml = "1.1"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
